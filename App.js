@@ -13,8 +13,12 @@ import {
   Alert,
   Linking,
   Share,
+  RefreshControl,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 
 const STORAGE_KEY = '@ado_desk_cases_prod_v1';
 const PROFILE_STORAGE_KEY = '@ado_desk_user_profile';
@@ -60,155 +64,6 @@ const MONTHS_FULL = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-const INITIAL_MOCK_CASES = [
-  {
-    id: 'c_1',
-    caseNo: 'WP(C) 1024/2026',
-    partyName: 'Ramesh Chandra Jena vs State of Odisha',
-    courtName: 'Court 3, High Court',
-    itemNo: '12',
-    caseType: 'Senior Standing Counsel',
-    phoneNo: '9861011223',
-    clientName: 'Ramesh (Petitioner)',
-    status: 'PENDING',
-    actionType: 'share_print',
-    hearings: [
-      {
-        id: 'h_1_prev',
-        date: '2026-10-12',
-        time: '10:30 AM',
-        orderNotes: 'Counter affidavit called within 4 weeks. Matter listed for further order.',
-        completed: true,
-      },
-      {
-        id: 'h_1_current',
-        date: '2026-11-09',
-        time: '10:30 AM',
-        orderTitle: 'LAST ORDER PASSED',
-        orderNotes: 'Notice issued to Opposite Parties. Counter affidavit called within 4 weeks. Interim stay order on land eviction extended till next date of listing.',
-        adjournedTo: '2026-11-13',
-        causeListType: 'Regular Cause List',
-        completed: false,
-      },
-      {
-        id: 'h_1_next',
-        date: '2026-11-13',
-        time: '10:30 AM',
-        orderTitle: 'SCHEDULED HEARING',
-        orderNotes: 'Listed for further orders & counter affidavit scrutiny.',
-        completed: false,
-      },
-    ],
-  },
-  {
-    id: 'c_2',
-    caseNo: 'ARB.P. 312/2025',
-    partyName: 'M/s Falcon Infra Pvt Ltd vs Union of India & Anr.',
-    courtName: 'Court 1, Commercial Division',
-    statusBadge: 'Decreed in Favor',
-    caseType: 'Lead Arbitral Counsel',
-    phoneNo: '9437088912',
-    clientName: 'Falcon Director',
-    status: 'DECREED',
-    actionType: 'judgment_pdf',
-    actionLabel: 'Judgment PDF',
-    hearings: [
-      {
-        id: 'h_2_prev',
-        date: '2026-10-28',
-        time: '11:45 AM',
-        orderNotes: 'Final arbitral arguments concluded.',
-        completed: true,
-      },
-      {
-        id: 'h_2_current',
-        date: '2026-11-09',
-        time: '11:45 AM',
-        orderTitle: 'FINAL JUDGMENT PRONOUNCED',
-        orderNotes: 'Arbitral award upheld in entirety. Execution petition disposed of with statutory interest awarded at 9% p.a.',
-        completed: true,
-      },
-    ],
-  },
-  {
-    id: 'c_3',
-    caseNo: 'OJC 4419/2026',
-    partyName: 'Smt. Manorama Devi v. Revenue Divisional Commissioner',
-    courtName: 'Bench IV, Courtroom 7',
-    itemNo: '28',
-    caseType: 'Civil Writ Petition',
-    phoneNo: '9776123450',
-    clientName: 'Manorama (Client)',
-    status: 'PENDING',
-    actionType: 'set_alert',
-    actionLabel: 'Set Alert',
-    hearings: [
-      {
-        id: 'h_3_prev',
-        date: '2026-11-02',
-        time: '02:15 PM',
-        orderNotes: 'Urgent motion moved for interim stay on demolition/eviction notice.',
-        completed: true,
-      },
-      {
-        id: 'h_3_current',
-        date: '2026-11-09',
-        time: '02:15 PM',
-        orderTitle: 'INTERIM PROTECTION STATUS',
-        orderNotes: 'Interim stay on eviction extended till next date of hearing. Lower court records summoned via special messenger.',
-        adjournedTo: '2026-11-20',
-        causeListType: 'For Orders',
-        completed: false,
-      },
-    ],
-  },
-  {
-    id: 'c_4',
-    caseNo: 'W.P.(C) 8901/2026',
-    partyName: 'Kalinga Mining Corp v. Dept of Steel & Mines',
-    courtName: 'Court 2 (Special Bench)',
-    statusBadge: 'Urgent Interim Relief',
-    caseType: 'Caveat Lodged',
-    phoneNo: '9037012389',
-    clientName: 'GM Legal, KMC',
-    status: 'URGENT',
-    actionType: 'open_brief',
-    actionLabel: 'Open Brief',
-    hearings: [
-      {
-        id: 'h_4_current',
-        date: '2026-11-09',
-        time: '03:30 PM',
-        orderTitle: 'MOTION BRIEFING NOTE',
-        orderNotes: 'Listed for Fresh Admission & Urgent Stay Application. Caveat reported lodged by State Advocate General.',
-        completed: false,
-      },
-    ],
-  },
-  {
-    id: 'c_5',
-    caseNo: 'CRL.A. 488/2026',
-    partyName: 'Bijay Kumar Das v. State Vigilance Dept',
-    courtName: 'Court 4, High Court',
-    itemNo: '08',
-    caseType: 'Criminal Appeal',
-    phoneNo: '9437112233',
-    clientName: 'Bijay Das',
-    status: 'PENDING',
-    actionType: 'share_print',
-    hearings: [
-      {
-        id: 'h_5_current',
-        date: '2026-11-11',
-        time: '11:00 AM',
-        orderTitle: 'BAIL APPLICATION LISTING',
-        orderNotes: 'Case record submitted for regular bail hearing. State counsel to produce case diary.',
-        completed: false,
-      },
-    ],
-  },
-];
-
 export default function App() {
   // Opens HOME screen first by default
   const [currentTab, setCurrentTab] = useState('HOME'); // 'HOME' | 'DIARY' | 'CASES' | 'CLIENTS' | 'PROFILE'
@@ -219,9 +74,24 @@ export default function App() {
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingName, setOnboardingName] = useState('');
 
+  // Advocate Profile Edit State
+  const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileDesignation, setProfileDesignation] = useState('');
+  const [profileEnrollmentNo, setProfileEnrollmentNo] = useState('');
+  const [profileBarAssoc, setProfileBarAssoc] = useState('');
+  const [profileChamber, setProfileChamber] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+
+  // Calendar Pull-to-Refresh State
+  const [diaryRefreshing, setDiaryRefreshing] = useState(false);
+
+  // About App Modal State
+  const [aboutModalVisible, setAboutModalVisible] = useState(false);
+
   // Sidebar Drawer State
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [biometricEnabled, setBiometricEnabled] = useState(true);
 
   // Modals
   const [newCaseModalVisible, setNewCaseModalVisible] = useState(false);
@@ -321,9 +191,12 @@ export default function App() {
 
     const newProfile = {
       name: trimmed,
+      designation: 'Advocate & Legal Consultant',
       barAssociation: 'High Court Bar Association',
       enrollmentNo: 'OR/2418/2012',
-      chamber: 'Chamber 402',
+      chamberAddress: 'Chamber 402, High Court Bar Association Building, Cuttack - 753002',
+      phone: '+91 98610 11223',
+      email: 'sounic@advocatedesk.law',
       createdAt: new Date().toISOString(),
     };
 
@@ -462,7 +335,14 @@ export default function App() {
 
   const handleCreateBackup = async () => {
     try {
-      const jsonString = JSON.stringify(cases, null, 2);
+      const backupPayload = {
+        app: 'ado-desk',
+        version: '2.0.0',
+        exportedAt: new Date().toISOString(),
+        userProfile: userProfile || null,
+        cases: cases,
+      };
+      const jsonString = JSON.stringify(backupPayload, null, 2);
       const fileName = `advocate_diary_backup_${formatDate(new Date())}.json`;
 
       if (Platform.OS === 'web') {
@@ -475,63 +355,219 @@ export default function App() {
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
-        alert(`Backup downloaded successfully: ${fileName}`);
+        Alert.alert('Backup Downloaded', `Backup file saved to your device downloads: ${fileName}`);
       } else {
+        // Mobile (Android / iOS)
+        let fileSavedLocally = false;
+        let fileUri = null;
+
+        try {
+          if (FileSystem && FileSystem.documentDirectory) {
+            fileUri = `${FileSystem.documentDirectory}${fileName}`;
+            await FileSystem.writeAsStringAsync(fileUri, jsonString, {
+              encoding: FileSystem.EncodingType?.UTF8 || 'utf8',
+            });
+            fileSavedLocally = true;
+          }
+        } catch (fsErr) {
+          console.warn('FileSystem write error:', fsErr);
+        }
+
+        let sharedSuccessfully = false;
+        if (fileUri) {
+          try {
+            const isSharingAvailable = await Sharing.isAvailableAsync();
+            if (isSharingAvailable) {
+              await Sharing.shareAsync(fileUri, {
+                mimeType: 'application/json',
+                dialogTitle: 'Download & Save Backup to Storage',
+                UTI: 'public.json',
+              });
+              sharedSuccessfully = true;
+            }
+          } catch (shareErr) {
+            console.warn('Sharing error:', shareErr);
+          }
+        }
+
+        if (!sharedSuccessfully) {
+          await Share.share({
+            title: fileName,
+            message: jsonString,
+          });
+        }
+
         Alert.alert(
-          'Backup Created',
-          `Encrypted backup payload generated with ${cases.length} cases. Ready for export.`
+          'Backup Created & Saved',
+          fileSavedLocally
+            ? `Backup file "${fileName}" generated with ${cases.length} case records and saved to device storage.`
+            : `Backup payload generated with ${cases.length} case records.`
         );
       }
       setDrawerOpen(false);
     } catch (error) {
-      alert('Error creating backup: ' + error.message);
+      console.error('Backup error:', error);
+      Alert.alert('Error Creating Backup', error.message || 'Unknown error occurred.');
     }
   };
 
-  const handleUploadBackup = () => {
-    if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'application/json';
-      input.onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+  const processAndRestoreBackupData = async (jsonString) => {
+    try {
+      const parsedData = JSON.parse(jsonString);
+      let casesArray = [];
+      let profileToRestore = null;
 
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          try {
-            const parsedData = JSON.parse(event.target.result);
-            if (!Array.isArray(parsedData)) {
-              alert('Error: Uploaded file is not a valid Advocate Diary array.');
-              return;
-            }
+      if (Array.isArray(parsedData)) {
+        casesArray = parsedData;
+      } else if (parsedData && Array.isArray(parsedData.cases)) {
+        casesArray = parsedData.cases;
+        if (parsedData.userProfile && parsedData.userProfile.name) {
+          profileToRestore = parsedData.userProfile;
+        }
+      } else {
+        Alert.alert('Invalid Backup', 'The selected file is not a valid Advocate Diary backup.');
+        return;
+      }
 
-            const normalized = parsedData.map((item) => ({
-              ...item,
-              hearings: Array.isArray(item.hearings) ? item.hearings : [],
-            }));
+      const normalized = casesArray.map((item) => ({
+        ...item,
+        hearings: Array.isArray(item.hearings) ? item.hearings : [],
+      }));
 
-            await saveCases(normalized);
-            alert(`Restore Successful! ${normalized.length} cases restored.`);
-            setDrawerOpen(false);
-          } catch (err) {
-            alert('Corrupt JSON backup file: ' + err.message);
-          }
+      await saveCases(normalized);
+
+      if (profileToRestore) {
+        await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profileToRestore));
+        setUserProfile(profileToRestore);
+      }
+
+      Alert.alert(
+        'Restore Successful',
+        `Successfully restored ${normalized.length} case records${profileToRestore ? ' and profile details' : ''} to your practice diary.`
+      );
+    } catch (err) {
+      console.error('Failed to parse backup:', err);
+      Alert.alert('Corrupt Backup File', 'Could not parse JSON: ' + (err.message || 'Invalid format'));
+    }
+  };
+
+  const handleUploadBackup = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json';
+        input.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            await processAndRestoreBackupData(event.target.result);
+          };
+          reader.readAsText(file);
         };
-        reader.readAsText(file);
-      };
-      input.click();
-    } else {
-      Alert.alert('Upload Backup', 'File restore is available in web preview.');
-      setDrawerOpen(false);
+        input.click();
+        setDrawerOpen(false);
+      } else {
+        // Mobile (Android / iOS): Open document picker for mobile storage
+        setDrawerOpen(false);
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ['application/json', 'text/*', '*/*'],
+          copyToCacheDirectory: true,
+        });
+
+        if (result.canceled) {
+          return;
+        }
+
+        const asset = result.assets && result.assets.length > 0 ? result.assets[0] : result;
+        const fileUri = asset.uri;
+
+        if (!fileUri) {
+          Alert.alert('No File Selected', 'Could not access the selected backup file.');
+          return;
+        }
+
+        let fileContent = '';
+        try {
+          if (FileSystem && FileSystem.readAsStringAsync) {
+            fileContent = await FileSystem.readAsStringAsync(fileUri, {
+              encoding: FileSystem.EncodingType?.UTF8 || 'utf8',
+            });
+          } else {
+            const resp = await fetch(fileUri);
+            fileContent = await resp.text();
+          }
+        } catch (readErr) {
+          const resp = await fetch(fileUri);
+          fileContent = await resp.text();
+        }
+
+        if (!fileContent) {
+          Alert.alert('Empty File', 'The selected backup file contains no readable content.');
+          return;
+        }
+
+        await processAndRestoreBackupData(fileContent);
+      }
+    } catch (err) {
+      console.error('DocumentPicker / Restore error:', err);
+      Alert.alert('Restore Error', 'Could not open or restore file: ' + (err.message || 'Unknown error'));
     }
   };
 
-  const handleResetToDemoData = async () => {
-    await saveCases(INITIAL_MOCK_CASES);
-    setSelectedDate(new Date(2026, 10, 9));
-    setDrawerOpen(false);
-    alert('Reset successfully to standard practice diary data!');
+  const openEditProfileModal = () => {
+    setProfileName(userProfile?.name || '');
+    setProfileDesignation(userProfile?.designation || 'Advocate & Legal Consultant');
+    setProfileEnrollmentNo(userProfile?.enrollmentNo || 'OR/2418/2012');
+    setProfileBarAssoc(userProfile?.barAssociation || 'High Court Bar Association');
+    setProfileChamber(
+      userProfile?.chamberAddress || 'Chamber 402, High Court Bar Association Building, Cuttack - 753002'
+    );
+    setProfilePhone(userProfile?.phone || '+91 98610 11223');
+    setProfileEmail(userProfile?.email || 'sounic@advocatedesk.law');
+    setEditProfileModalVisible(true);
+  };
+
+  const handleSaveProfile = async () => {
+    const trimmedName = profileName.trim();
+    if (!trimmedName) {
+      Alert.alert('Name Required', 'Please enter your advocate name.');
+      return;
+    }
+
+    const updatedProfile = {
+      ...(userProfile || {}),
+      name: trimmedName,
+      designation: profileDesignation.trim() || 'Advocate',
+      enrollmentNo: profileEnrollmentNo.trim() || 'OR/2418/2012',
+      barAssociation: profileBarAssoc.trim() || 'High Court Bar Association',
+      chamberAddress:
+        profileChamber.trim() || 'Chamber 402, High Court Bar Association Building, Cuttack - 753002',
+      phone: profilePhone.trim() || '+91 98610 11223',
+      email: profileEmail.trim() || 'advocate@advocatedesk.law',
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(updatedProfile));
+      setUserProfile(updatedProfile);
+      setEditProfileModalVisible(false);
+      Alert.alert('Profile Saved', 'Advocate profile details updated successfully.');
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      Alert.alert('Storage Error', 'Could not save profile details locally.');
+    }
+  };
+
+  const onRefreshDiary = async () => {
+    setDiaryRefreshing(true);
+    const today = new Date();
+    setSelectedDate(today);
+    setPickerMonth(today);
+    await loadCases();
+    setDiaryRefreshing(false);
   };
 
   // --- CASE CREATION & UPDATES ---
@@ -866,7 +902,19 @@ export default function App() {
     dailyItems.sort((a, b) => (a.hearingData.time || '').localeCompare(b.hearingData.time || ''));
 
     return (
-      <ScrollView style={styles.scrollPage} contentContainerStyle={styles.scrollPageContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollPage}
+        contentContainerStyle={styles.scrollPageContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={diaryRefreshing}
+            onRefresh={onRefreshDiary}
+            colors={['#0051d5']}
+            tintColor="#0051d5"
+          />
+        }
+      >
         {/* Dark Docket Header Card */}
         <View style={styles.docketCard}>
           <View style={styles.docketTopRow}>
@@ -1615,24 +1663,44 @@ export default function App() {
   const renderProfileTab = () => {
     const totalHearings = cases.reduce((sum, c) => sum + (c.hearings?.length || 0), 0);
     const decreedCount = cases.filter((c) => c.status === 'DECREED').length;
+    const name = userProfile?.name || 'Advocate';
+    const designation = userProfile?.designation || 'Advocate & Legal Consultant';
+    const barAssoc = userProfile?.barAssociation || 'High Court Bar Association';
+    const enrNo = userProfile?.enrollmentNo || 'OR/2418/2012';
+    const chamber =
+      userProfile?.chamberAddress ||
+      'Chamber 402, High Court Bar Association Building, Cuttack - 753002';
+    const phone = userProfile?.phone || '+91 98610 11223';
+    const email = userProfile?.email || 'sounic@advocatedesk.law';
 
     return (
       <ScrollView style={styles.scrollPage} contentContainerStyle={styles.scrollPageContent}>
+        {/* Profile Dossier Hero Card */}
         <View style={styles.profileBigCard}>
           <View style={styles.profileBigAvatar}>
-            <Text style={styles.profileBigAvatarText}>⚖</Text>
+            <Text style={styles.profileBigAvatarText}>{getInitials(name)}</Text>
           </View>
-          <Text style={styles.profileNameText}>{userProfile?.name || 'Advocate'}</Text>
-          <Text style={styles.profileSubText}>
-            {userProfile?.barAssociation || 'Senior Counsel • High Court of Orissa'}
-          </Text>
+          <Text style={styles.profileNameText}>{name}</Text>
+          <Text style={styles.profileSubText}>{designation}</Text>
+          <Text style={styles.profileBarAssocText}>🏛 {barAssoc}</Text>
           <View style={styles.barBadgePill}>
             <Text style={styles.barBadgePillText}>
-              BAR COUNCIL REG: {userProfile?.enrollmentNo || 'OR/1284/2004'}
+              BAR COUNCIL REG: {enrNo}
             </Text>
           </View>
+
+          {/* Edit Profile Details Action Button */}
+          <TouchableOpacity
+            style={styles.editProfilePillBtn}
+            onPress={openEditProfileModal}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.editProfilePillIcon}>✎</Text>
+            <Text style={styles.editProfilePillText}>Edit Profile Details</Text>
+          </TouchableOpacity>
         </View>
 
+        {/* Practice Stats Overview */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statBoxNum}>{cases.length}</Text>
@@ -1648,43 +1716,64 @@ export default function App() {
           </View>
         </View>
 
-        <View style={styles.profileActionsCard}>
-          <Text style={styles.profileSectionTitle}>DIARY DATA & BACKUP</Text>
+        {/* Chambers & Professional Office Card */}
+        <View style={styles.chamberCard}>
+          <View style={styles.chamberCardHeaderRow}>
+            <Text style={styles.chamberTitle}>CHAMBERS & PRACTICE OFFICE</Text>
+            <TouchableOpacity onPress={openEditProfileModal} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.chamberEditLink}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.chamberAddress}>{chamber}</Text>
+          <View style={styles.chamberContactRow}>
+            <TouchableOpacity
+              style={styles.chamberContactPill}
+              onPress={() => handlePhoneCall(phone)}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 13 }}>📞</Text>
+              <Text style={styles.chamberContactPillText}>{phone}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.chamberContactPill}
+              onPress={() => {
+                if (Platform.OS === 'web') {
+                  window.open(`mailto:${email}`);
+                } else {
+                  Linking.openURL(`mailto:${email}`).catch(() => {
+                    Alert.alert('Email', email);
+                  });
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 13 }}>✉️</Text>
+              <Text style={styles.chamberContactPillText}>{email}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-          <TouchableOpacity style={styles.profileActionButton} onPress={handleCreateBackup}>
+        {/* Diary Data & Storage Actions */}
+        <View style={styles.profileActionsCard}>
+          <Text style={styles.profileSectionTitle}>DIARY DATA & STORAGE</Text>
+
+          <TouchableOpacity style={styles.profileActionButton} onPress={handleCreateBackup} activeOpacity={0.8}>
             <Text style={styles.profileActionIcon}>💾</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.profileActionMain}>Create Backup</Text>
-              <Text style={styles.profileActionSub}>Export encrypted JSON file to device</Text>
+              <Text style={styles.profileActionSub}>Download & save encrypted JSON file to device</Text>
             </View>
             <Text style={styles.profileActionChevron}>›</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.profileActionButton} onPress={handleUploadBackup}>
+          <TouchableOpacity style={styles.profileActionButton} onPress={handleUploadBackup} activeOpacity={0.8}>
             <Text style={styles.profileActionIcon}>📂</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.profileActionMain}>Restore from Backup</Text>
-              <Text style={styles.profileActionSub}>Restore practice diary from JSON</Text>
+              <Text style={styles.profileActionSub}>Choose backup file from device storage</Text>
             </View>
             <Text style={styles.profileActionChevron}>›</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.profileActionButton} onPress={handleResetToDemoData}>
-            <Text style={styles.profileActionIcon}>🔄</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.profileActionMain}>Reset to Sample Cause List</Text>
-              <Text style={styles.profileActionSub}>Load standard Stitch design mock cases</Text>
-            </View>
-            <Text style={styles.profileActionChevron}>›</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.chamberCard}>
-          <Text style={styles.chamberTitle}>CHAMBERS</Text>
-          <Text style={styles.chamberAddress}>
-            Chamber No. 42, High Court Bar Association Building, Cuttack - 753002
-          </Text>
-          <Text style={styles.chamberContact}>Phone: +91 98610 11223 • contact@advocatedesk.law</Text>
         </View>
       </ScrollView>
     );
@@ -2075,6 +2164,24 @@ export default function App() {
                 <Text style={styles.drawerNavChevron}>›</Text>
               </TouchableOpacity>
 
+              {/* About App Navigation Item */}
+              <TouchableOpacity
+                style={styles.drawerNavItem}
+                onPress={() => {
+                  setDrawerOpen(false);
+                  setAboutModalVisible(true);
+                }}
+                activeOpacity={0.75}
+              >
+                <View style={styles.drawerNavLeftRow}>
+                  <Text style={styles.drawerNavItemIcon}>ℹ️</Text>
+                  <Text style={styles.drawerNavItemText}>About App</Text>
+                </View>
+                <View style={styles.drawerVersionPill}>
+                  <Text style={styles.drawerVersionPillText}>v2.0.0</Text>
+                </View>
+              </TouchableOpacity>
+
               {/* DATA & CRYPTOGRAPHY SECTION */}
               <Text style={[styles.drawerSectionLabel, { marginTop: 14 }]}>DATA & CRYPTOGRAPHY</Text>
 
@@ -2090,8 +2197,8 @@ export default function App() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.drawerDataTitle}>Create Backup</Text>
-                    <Text style={styles.drawerDataSubtitle}>Export encrypted JSON file</Text>
-                    <Text style={styles.drawerDataTimestamp}>Last: Yesterday 08:30 PM</Text>
+                    <Text style={styles.drawerDataSubtitle}>Download & save to device storage</Text>
+                    <Text style={styles.drawerDataTimestamp}>Encrypted JSON File</Text>
                   </View>
                 </View>
                 <Text style={styles.drawerDownloadIcon}>📥</Text>
@@ -2105,60 +2212,15 @@ export default function App() {
               >
                 <View style={styles.drawerDataCardLeft}>
                   <View style={styles.drawerDataIconBox}>
-                    <Text style={{ fontSize: 18 }}>☁️</Text>
+                    <Text style={{ fontSize: 18 }}>📂</Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.drawerDataTitle}>Restore Backup</Text>
-                    <Text style={styles.drawerDataSubtitle}>Sync practice diary safely</Text>
+                    <Text style={styles.drawerDataSubtitle}>Choose backup from device storage</Text>
                   </View>
                 </View>
                 <View style={styles.drawerAesChip}>
-                  <Text style={styles.drawerAesChipText}>AES-256</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Biometric Guard Toggle */}
-              <View style={styles.drawerBiometricCard}>
-                <View style={styles.drawerDataCardLeft}>
-                  <Text style={{ fontSize: 20, marginRight: 10 }}>🔒</Text>
-                  <View>
-                    <Text style={styles.drawerBiometricTitle}>Biometric App Lock</Text>
-                    <Text style={styles.drawerDataSubtitle}>FaceID / TouchID Prompt</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.drawerTogglePill,
-                    biometricEnabled ? styles.drawerTogglePillActive : styles.drawerTogglePillInactive,
-                  ]}
-                  onPress={() => setBiometricEnabled(!biometricEnabled)}
-                  activeOpacity={0.8}
-                >
-                  <View
-                    style={[
-                      styles.drawerToggleThumb,
-                      biometricEnabled ? styles.drawerToggleThumbActive : styles.drawerToggleThumbInactive,
-                    ]}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {/* Reset Sample Data Button */}
-              <TouchableOpacity
-                style={[styles.drawerDataCard, { backgroundColor: '#fef3c7', borderColor: '#fde68a', borderWidth: 1 }]}
-                onPress={handleResetToDemoData}
-                activeOpacity={0.8}
-              >
-                <View style={styles.drawerDataCardLeft}>
-                  <View style={[styles.drawerDataIconBox, { backgroundColor: '#fffbeb' }]}>
-                    <Text style={{ fontSize: 18 }}>🔄</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.drawerDataTitle, { color: '#92400e' }]}>Reset Sample Data</Text>
-                    <Text style={[styles.drawerDataSubtitle, { color: '#b45309' }]}>
-                      Load standard Stitch mock cases
-                    </Text>
-                  </View>
+                  <Text style={styles.drawerAesChipText}>JSON</Text>
                 </View>
               </TouchableOpacity>
             </ScrollView>
@@ -2199,7 +2261,7 @@ export default function App() {
                 <TouchableOpacity
                   style={styles.drawerLockBtn}
                   onPress={() => {
-                    alert('Chamber locked. Please re-authenticate.');
+                    Alert.alert('Chamber Locked', 'Practice diary locked. Tap anywhere to reopen.');
                     setDrawerOpen(false);
                   }}
                   activeOpacity={0.7}
@@ -2207,7 +2269,7 @@ export default function App() {
                   <Text style={styles.drawerLockIcon}>🔒</Text>
                   <Text style={styles.drawerLockText}>Lock Diary</Text>
                 </TouchableOpacity>
-                <Text style={styles.drawerVersionText}>v2.4.1 (Build 118)</Text>
+                <Text style={styles.drawerVersionText}>v2.0.0 (Release Build)</Text>
               </View>
             </View>
           </View>
@@ -2425,6 +2487,7 @@ export default function App() {
                   contentContainerStyle={styles.quickPhrasesRow}
                 >
                   {[
+                    'Passed to next hearing date',
                     'Notice Issued',
                     'Counter Called within 4 Weeks',
                     'Interim Stay Extended',
@@ -2786,6 +2849,177 @@ export default function App() {
             </View>
           </ScrollView>
         </SafeAreaView>
+      </Modal>
+
+      {/* --- MODAL: EDIT ADVOCATE PROFILE --- */}
+      <Modal visible={editProfileModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: 580 }]}>
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={styles.modalTitle}>Edit Advocate Profile</Text>
+                <Text style={styles.modalSubtitle}>Update personal practice & chamber details</Text>
+              </View>
+              <TouchableOpacity onPress={() => setEditProfileModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Text style={{ fontSize: 18, color: '#94a3b8', fontWeight: 'bold' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ paddingVertical: 6 }} showsVerticalScrollIndicator={false}>
+              <Text style={styles.formLabel}>Full Name / Title *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="e.g. Sounic Behera or Advocate Sounic"
+                placeholderTextColor="#94a3b8"
+                value={profileName}
+                onChangeText={setProfileName}
+                autoCapitalize="words"
+              />
+
+              <Text style={styles.formLabel}>Professional Designation</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="e.g. Advocate & Legal Consultant / Senior Counsel"
+                placeholderTextColor="#94a3b8"
+                value={profileDesignation}
+                onChangeText={setProfileDesignation}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1.1 }}>
+                  <Text style={styles.formLabel}>Bar Council Reg / Enr No.</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="e.g. OR/2418/2012"
+                    placeholderTextColor="#94a3b8"
+                    value={profileEnrollmentNo}
+                    onChangeText={setProfileEnrollmentNo}
+                    autoCapitalize="characters"
+                  />
+                </View>
+                <View style={{ flex: 1.3 }}>
+                  <Text style={styles.formLabel}>Bar Association</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="e.g. High Court Bar Association"
+                    placeholderTextColor="#94a3b8"
+                    value={profileBarAssoc}
+                    onChangeText={setProfileBarAssoc}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.formLabel}>Chamber / Office Address</Text>
+              <TextInput
+                style={[styles.formInput, { minHeight: 65, textAlignVertical: 'top' }]}
+                placeholder="e.g. Chamber No. 402, High Court Bar Association Building, Cuttack - 753002"
+                placeholderTextColor="#94a3b8"
+                multiline
+                value={profileChamber}
+                onChangeText={setProfileChamber}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formLabel}>Chamber Phone / Mobile</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="e.g. +91 98610 11223"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="phone-pad"
+                    value={profilePhone}
+                    onChangeText={setProfilePhone}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formLabel}>Professional Email</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="e.g. sounic@advocatedesk.law"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={profileEmail}
+                    onChangeText={setProfileEmail}
+                  />
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={[styles.modalActionBtn, { backgroundColor: '#f1f5f9' }]}
+                onPress={() => setEditProfileModalVisible(false)}
+              >
+                <Text style={{ color: '#475569', fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalActionBtn, { backgroundColor: '#2563eb' }]}
+                onPress={handleSaveProfile}
+              >
+                <Text style={{ color: '#ffffff', fontWeight: '700' }}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- MODAL: ABOUT APP --- */}
+      <Modal visible={aboutModalVisible} animationType="fade" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 390, padding: 22 }]}>
+            {/* Header / Brand Icon */}
+            <View style={{ alignItems: 'center', marginBottom: 14 }}>
+              <View style={styles.aboutAppIconCircle}>
+                <Text style={{ fontSize: 26, color: '#ffffff' }}>⚖</Text>
+              </View>
+              <Text style={styles.aboutAppName}>ado-desk</Text>
+              <Text style={styles.aboutAppSubtitle}>Personal Practice Ledger & Court Diary</Text>
+              <View style={styles.aboutVersionBadge}>
+                <Text style={styles.aboutVersionBadgeText}>v2.0.0 (Release Build)</Text>
+              </View>
+            </View>
+
+            <View style={styles.aboutDetailsList}>
+              <View style={styles.aboutDetailItem}>
+                <Text style={styles.aboutDetailLabel}>DEVELOPER</Text>
+                <Text style={styles.aboutDetailValue}>Sounic Behera</Text>
+              </View>
+
+              <View style={styles.aboutDetailItem}>
+                <Text style={styles.aboutDetailLabel}>APPLICATION</Text>
+                <Text style={styles.aboutDetailValue}>ado-desk Practice Suite</Text>
+              </View>
+
+              <View style={styles.aboutDetailItem}>
+                <Text style={styles.aboutDetailLabel}>VERSION</Text>
+                <Text style={styles.aboutDetailValue}>v2.0.0 (Production Release)</Text>
+              </View>
+
+              <View style={styles.aboutDetailItem}>
+                <Text style={styles.aboutDetailLabel}>STORAGE ENGINE</Text>
+                <Text style={styles.aboutDetailValue}>Offline-First On-Device Vault</Text>
+              </View>
+
+              <View style={styles.aboutDetailItem}>
+                <Text style={styles.aboutDetailLabel}>SECURITY ARCHITECTURE</Text>
+                <Text style={styles.aboutDetailValue}>100% Private • Zero Cloud Leakage</Text>
+              </View>
+            </View>
+
+            <Text style={styles.aboutAppDescription}>
+              Designed and engineered by Sounic Behera for advocates and legal practitioners. All dockets, cause lists, daily orders, and client ledgers are preserved strictly within your local device memory.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.aboutCloseBtn}
+              onPress={() => setAboutModalVisible(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.aboutCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -5305,5 +5539,170 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
     letterSpacing: 0.3,
+  },
+
+  // --- PROFILE EDIT & EXPANDED PROFILE STYLES ---
+  editProfilePillBtn: {
+    marginTop: 14,
+    backgroundColor: '#0051d5',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    shadowColor: '#0051d5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  editProfilePillIcon: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  editProfilePillText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  profileBarAssocText: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  chamberCardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  chamberEditLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0051d5',
+  },
+  chamberContactRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  chamberContactPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  chamberContactPillText: {
+    fontSize: 12,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  drawerVersionPill: {
+    backgroundColor: '#e0e3e5',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+  },
+  drawerVersionPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#191c1e',
+  },
+
+  // --- ABOUT APP MODAL STYLES ---
+  aboutAppIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#131b2e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  aboutAppName: {
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia, serif' }),
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#191c1e',
+    letterSpacing: -0.3,
+  },
+  aboutAppSubtitle: {
+    fontSize: 12.5,
+    color: '#64748b',
+    marginTop: 2,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  aboutVersionBadge: {
+    marginTop: 8,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    borderRadius: 12,
+  },
+  aboutVersionBadgeText: {
+    color: '#1d4ed8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  aboutDetailsList: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 8,
+    marginVertical: 14,
+  },
+  aboutDetailItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  aboutDetailLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.5,
+  },
+  aboutDetailValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  aboutAppDescription: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 17,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  aboutCloseBtn: {
+    backgroundColor: '#0f172a',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aboutCloseBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
