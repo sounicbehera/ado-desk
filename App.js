@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Modal,
   Platform,
@@ -19,6 +18,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
 const STORAGE_KEY = '@ado_desk_cases_prod_v1';
 const PROFILE_STORAGE_KEY = '@ado_desk_user_profile';
@@ -65,6 +68,24 @@ const MONTHS_FULL = [
 ];
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AdvocateDiaryApp />
+    </SafeAreaProvider>
+  );
+}
+
+function AdvocateDiaryApp() {
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? Math.max(StatusBar.currentHeight || 0, 32) : 0
+  );
+  const bottomInset = Math.max(
+    insets.bottom,
+    Platform.OS === 'android' ? 48 : 0
+  );
+
   // Opens HOME screen first by default
   const [currentTab, setCurrentTab] = useState('HOME'); // 'HOME' | 'DIARY' | 'CASES' | 'CLIENTS' | 'PROFILE'
   const [cases, setCases] = useState([]);
@@ -715,7 +736,10 @@ export default function App() {
       <View style={styles.homeMainWrapper}>
         <ScrollView
           style={styles.homeScrollPage}
-          contentContainerStyle={styles.homeScrollContent}
+          contentContainerStyle={[
+            styles.homeScrollContent,
+            { paddingBottom: 110 + bottomInset },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {/* Top Utility Bar (Android / React Native Minimal feel) */}
@@ -826,7 +850,7 @@ export default function App() {
         </ScrollView>
 
         {/* Interactive Floating Dock Pill Overlay */}
-        <View style={styles.floatingDockWrap}>
+        <View style={[styles.floatingDockWrap, { paddingBottom: bottomInset + 14 }]}>
           <View style={styles.floatingDockPill}>
             {/* Home Icon */}
             <TouchableOpacity
@@ -904,7 +928,10 @@ export default function App() {
     return (
       <ScrollView
         style={styles.scrollPage}
-        contentContainerStyle={styles.scrollPageContent}
+        contentContainerStyle={[
+          styles.scrollPageContent,
+          { paddingBottom: 85 + bottomInset },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -1274,7 +1301,10 @@ export default function App() {
     return (
       <ScrollView
         style={styles.scrollPage}
-        contentContainerStyle={styles.scrollPageContent}
+        contentContainerStyle={[
+          styles.scrollPageContent,
+          { paddingBottom: 85 + bottomInset },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.searchOxfordCard}>
@@ -1603,7 +1633,13 @@ export default function App() {
     const clientList = Object.values(clientsMap);
 
     return (
-      <ScrollView style={styles.scrollPage} contentContainerStyle={styles.scrollPageContent}>
+      <ScrollView
+        style={styles.scrollPage}
+        contentContainerStyle={[
+          styles.scrollPageContent,
+          { paddingBottom: 85 + bottomInset },
+        ]}
+      >
         <View style={styles.clientHeaderSection}>
           <Text style={styles.clientHeaderTitle}>Clients Directory</Text>
           <Text style={styles.clientHeaderSubtitle}>{clientList.length} Connected Clients</Text>
@@ -1674,7 +1710,13 @@ export default function App() {
     const email = userProfile?.email || 'sounic@advocatedesk.law';
 
     return (
-      <ScrollView style={styles.scrollPage} contentContainerStyle={styles.scrollPageContent}>
+      <ScrollView
+        style={styles.scrollPage}
+        contentContainerStyle={[
+          styles.scrollPageContent,
+          { paddingBottom: 85 + bottomInset },
+        ]}
+      >
         {/* Profile Dossier Hero Card */}
         <View style={styles.profileBigCard}>
           <View style={styles.profileBigAvatar}>
@@ -1780,8 +1822,20 @@ export default function App() {
   };
 
   return (
-    <SafeAreaView style={styles.safeContainer}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f7f9fb" />
+    <View
+      style={[
+        styles.safeContainer,
+        {
+          paddingTop: topInset,
+          backgroundColor: currentTab === 'HOME' ? '#f7f9fb' : '#ffffff',
+        },
+      ]}
+    >
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={currentTab === 'HOME' ? '#f7f9fb' : '#ffffff'}
+        translucent={Platform.OS === 'android'}
+      />
 
       {/* Top Application Bar (shown on non-Home tabs) */}
       {currentTab !== 'HOME' ? (
@@ -1846,7 +1900,15 @@ export default function App() {
 
       {/* Standard Bottom Nav for non-Home tabs */}
       {currentTab !== 'HOME' ? (
-        <View style={styles.bottomNavContainer}>
+        <View
+          style={[
+            styles.bottomNavContainer,
+            {
+              height: 60 + bottomInset,
+              paddingBottom: bottomInset,
+            },
+          ]}
+        >
           <TouchableOpacity
             style={styles.bottomNavItem}
             onPress={() => setCurrentTab('HOME')}
@@ -1920,7 +1982,7 @@ export default function App() {
           {/* Drawer Slide Panel (84% screen width, max 340px) */}
           <View style={styles.drawerSheet}>
             {/* 1. Drawer Header (Deep Oxford Navy Surface #131b2e) */}
-            <View style={styles.drawerHeaderCard}>
+            <View style={[styles.drawerHeaderCard, { paddingTop: topInset + 14 }]}>
               {/* Ambient Decorative Scales Watermark */}
               <View style={styles.drawerScalesWatermark} pointerEvents="none">
                 <Text style={styles.drawerScalesWatermarkIcon}>⚖</Text>
@@ -2226,7 +2288,7 @@ export default function App() {
             </ScrollView>
 
             {/* 4. Drawer Footer & Security Telemetry */}
-            <View style={styles.drawerFooterContainer}>
+            <View style={[styles.drawerFooterContainer, { paddingBottom: bottomInset + 12 }]}>
               {/* On-Device Vault Status Card */}
               <View style={styles.drawerVaultCard}>
                 <View style={styles.drawerVaultHeaderRow}>
@@ -2276,7 +2338,7 @@ export default function App() {
 
           {/* Dismiss Touch Target (Right 16% Zone with Frosted Close Button) */}
           <TouchableOpacity
-            style={styles.drawerDismissArea}
+            style={[styles.drawerDismissArea, { paddingTop: topInset + 16 }]}
             activeOpacity={1}
             onPress={() => setDrawerOpen(false)}
           >
@@ -2290,7 +2352,7 @@ export default function App() {
       {/* --- 1. MODAL: REGISTER NEW CASE --- */}
       <Modal visible={newCaseModalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: 20 + bottomInset }]}>
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>New Court Case Entry</Text>
               <TouchableOpacity onPress={() => setNewCaseModalVisible(false)}>
@@ -2603,7 +2665,7 @@ export default function App() {
             </ScrollView>
 
             {/* Sticky Bottom Action Tray */}
-            <View style={styles.stitchBottomActionTray}>
+            <View style={[styles.stitchBottomActionTray, { paddingBottom: bottomInset + 12 }]}>
               <TouchableOpacity
                 style={styles.stitchDeleteBtn}
                 onPress={confirmDeleteCase}
@@ -2639,7 +2701,7 @@ export default function App() {
       {/* --- 3. MODAL: CALENDAR DATE PICKER --- */}
       <Modal visible={pickerVisible} animationType="fade" transparent={true}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: 430, paddingBottom: 16 }]}>
+          <View style={[styles.modalContent, { maxHeight: 430 + bottomInset, paddingBottom: 16 + bottomInset }]}>
             <View style={styles.pickerHeaderRow}>
               <TouchableOpacity
                 onPress={() =>
@@ -2722,7 +2784,7 @@ export default function App() {
       {/* --- 4. MODAL: DOCUMENT / BRIEF VIEWER --- */}
       <Modal visible={docModalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: 520 }]}>
+          <View style={[styles.modalContent, { maxHeight: 520 + bottomInset, paddingBottom: 20 + bottomInset }]}>
             <View style={styles.modalHeaderRow}>
               <View>
                 <Text style={styles.modalTitle}>Court Record & Document</Text>
@@ -2782,7 +2844,7 @@ export default function App() {
         transparent={false}
         onRequestClose={() => {}}
       >
-        <SafeAreaView style={styles.onboardingSafeArea}>
+        <View style={[styles.onboardingSafeArea, { paddingTop: topInset, paddingBottom: bottomInset + 14 }]}>
           <StatusBar barStyle="dark-content" backgroundColor="#f7f9fb" />
           <ScrollView
             contentContainerStyle={styles.onboardingScroll}
@@ -2848,13 +2910,13 @@ export default function App() {
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
 
       {/* --- MODAL: EDIT ADVOCATE PROFILE --- */}
       <Modal visible={editProfileModalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: 580 }]}>
+          <View style={[styles.modalContent, { maxHeight: 580 + bottomInset, paddingBottom: 20 + bottomInset }]}>
             <View style={styles.modalHeaderRow}>
               <View>
                 <Text style={styles.modalTitle}>Edit Advocate Profile</Text>
@@ -2966,8 +3028,8 @@ export default function App() {
 
       {/* --- MODAL: ABOUT APP --- */}
       <Modal visible={aboutModalVisible} animationType="fade" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxWidth: 390, padding: 22 }]}>
+        <View style={[styles.modalOverlay, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+          <View style={[styles.modalContent, { maxWidth: 390, width: '100%', borderRadius: 20, padding: 22 }]}>
             {/* Header / Brand Icon */}
             <View style={{ alignItems: 'center', marginBottom: 14 }}>
               <View style={styles.aboutAppIconCircle}>
@@ -3021,7 +3083,7 @@ export default function App() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
