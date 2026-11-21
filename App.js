@@ -614,9 +614,9 @@ function AdvocateDiaryApp() {
       partyName: partyName.trim(),
       courtName: courtName.trim() || 'Court 3, High Court',
       itemNo: itemNo.trim() || '',
-      caseType: caseType.trim() || 'Counsel Appearance',
+      caseType: caseType.trim() || '',
       phoneNo: phoneNo.trim(),
-      clientName: clientName.trim() || 'Client',
+      clientName: clientName.trim() || (partyName.trim() ? partyName.trim().split(/ vs | v\. | VS | V\/S /i)[0] : 'Client'),
       status: 'PENDING',
       hearings: [firstHearing],
     };
@@ -1622,7 +1622,7 @@ function AdvocateDiaryApp() {
       const key = c.phoneNo || c.clientName || 'Unassigned';
       if (!clientsMap[key]) {
         clientsMap[key] = {
-          clientName: c.clientName || 'General Client',
+          clientName: c.clientName || (c.partyName ? c.partyName.split(/ vs | v\. | VS | V\/S /i)[0] : 'General Client'),
           phoneNo: c.phoneNo || 'No Phone',
           cases: [],
         };
@@ -2370,49 +2370,22 @@ function AdvocateDiaryApp() {
                 onChangeText={setPartyName}
               />
 
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1.2 }}>
-                  <Text style={styles.formLabel}>Case Number *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="e.g. WP(C) 1024/2026"
-                    placeholderTextColor="#94a3b8"
-                    value={caseNo}
-                    onChangeText={setCaseNo}
-                  />
-                </View>
-                <View style={{ flex: 0.8 }}>
-                  <Text style={styles.formLabel}>Item No</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="e.g. 12"
-                    placeholderTextColor="#94a3b8"
-                    value={itemNo}
-                    onChangeText={setItemNo}
-                  />
-                </View>
-              </View>
+              <Text style={styles.formLabel}>Case Number *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="e.g. WP(C) 1024/2026"
+                placeholderTextColor="#94a3b8"
+                value={caseNo}
+                onChangeText={setCaseNo}
+              />
 
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1.2 }}>
-                  <Text style={styles.formLabel}>Hearing Date (YYYY-MM-DD) *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="2026-11-09"
-                    value={initialHearingDate}
-                    onChangeText={setInitialHearingDate}
-                  />
-                </View>
-                <View style={{ flex: 0.8 }}>
-                  <Text style={styles.formLabel}>Time</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="10:30 AM"
-                    value={initialHearingTime}
-                    onChangeText={setInitialHearingTime}
-                  />
-                </View>
-              </View>
+              <Text style={styles.formLabel}>Hearing Date (YYYY-MM-DD) *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="2026-11-09"
+                value={initialHearingDate}
+                onChangeText={setInitialHearingDate}
+              />
 
               <Text style={styles.formLabel}>Court / Bench</Text>
               <TextInput
@@ -2423,37 +2396,14 @@ function AdvocateDiaryApp() {
                 onChangeText={setCourtName}
               />
 
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.formLabel}>Client Phone</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="e.g. 9861011223"
-                    placeholderTextColor="#94a3b8"
-                    keyboardType="phone-pad"
-                    value={phoneNo}
-                    onChangeText={setPhoneNo}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.formLabel}>Client Label / Name</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="e.g. Ramesh (Petitioner)"
-                    placeholderTextColor="#94a3b8"
-                    value={clientName}
-                    onChangeText={setClientName}
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.formLabel}>Category / Role / Notes</Text>
+              <Text style={styles.formLabel}>Client Phone</Text>
               <TextInput
                 style={styles.formInput}
-                placeholder="e.g. Senior Standing Counsel / Caveat Lodged"
+                placeholder="e.g. 9861011223"
                 placeholderTextColor="#94a3b8"
-                value={caseType}
-                onChangeText={setCaseType}
+                keyboardType="phone-pad"
+                value={phoneNo}
+                onChangeText={setPhoneNo}
               />
 
               <Text style={styles.formLabel}>Initial Order / Registration Brief</Text>
