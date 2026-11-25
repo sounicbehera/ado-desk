@@ -2,10 +2,11 @@
   "expo": {
     "name": "ado-desk",
     "slug": "ado-desk",
-    "version": "2.5.0",
+    "version": "3.0.0",
     "icon": "./assets/adaptive-icon.png",
     "android": {
       "package": "com.sounic.adodesk",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"

@@ -13,6 +13,7 @@ import {
   Linking,
   Share,
   RefreshControl,
+  KeyboardAvoidingView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Sharing from 'expo-sharing';
@@ -21,10 +22,57 @@ import * as FileSystem from 'expo-file-system';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
+  initialWindowMetrics,
 } from 'react-native-safe-area-context';
 
 const STORAGE_KEY = '@ado_desk_cases_prod_v1';
 const PROFILE_STORAGE_KEY = '@ado_desk_user_profile';
+const THEME_STORAGE_KEY = '@ado_desk_theme_mode';
+
+const THEMES = {
+  light: {
+    isDark: false,
+    bg: '#f7f9fb',
+    surface: '#ffffff',
+    cardBg: '#ffffff',
+    subCardBg: '#f8fafc',
+    text: '#0f172a',
+    subtext: '#64748b',
+    muted: '#94a3b8',
+    border: '#e2e8f0',
+    borderLight: '#f1f5f9',
+    statusBarBg: '#ffffff',
+    statusBarStyle: 'dark-content',
+    navBg: '#ffffff',
+    primary: '#0051d5',
+    accent: '#2563eb',
+    tint: '#0051d5',
+    chipBg: '#eff6ff',
+    chipText: '#1d4ed8',
+    inputBg: '#ffffff',
+  },
+  dark: {
+    isDark: true,
+    bg: '#0b0f19',
+    surface: '#131b2e',
+    cardBg: '#131b2e',
+    subCardBg: '#1a233a',
+    text: '#f8fafc',
+    subtext: '#94a3b8',
+    muted: '#64748b',
+    border: '#232f48',
+    borderLight: '#1e293b',
+    statusBarBg: '#0b0f19',
+    statusBarStyle: 'light-content',
+    navBg: '#131b2e',
+    primary: '#38bdf8',
+    accent: '#60a5fa',
+    tint: '#38bdf8',
+    chipBg: '#1e293b',
+    chipText: '#38bdf8',
+    inputBg: '#1a233a',
+  },
+};
 
 function formatDate(d) {
   if (!d) return '';
@@ -32,6 +80,49 @@ function formatDate(d) {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function formatDateDMY(dStr) {
+  if (!dStr) return '';
+  const match = dStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (match) {
+    const day = match[3].padStart(2, '0');
+    const month = match[2].padStart(2, '0');
+    const year = match[1];
+    return `${day}/${month}/${year}`;
+  }
+  return dStr;
+}
+
+function formatDisplayDate(d) {
+  if (!d) return '';
+  if (typeof d === 'string') return formatDateDMY(d);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function parseToISODate(str) {
+  if (!str) return '';
+  const trimmed = str.trim();
+  // Match DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0');
+    const month = dmyMatch[2].padStart(2, '0');
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+  // Match YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, '0');
+    const day = ymdMatch[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return trimmed;
 }
 
 function getTimeBasedGreeting() {
@@ -69,7 +160,7 @@ const MONTHS_FULL = [
 
 export default function App() {
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialWindowMetrics={initialWindowMetrics}>
       <AdvocateDiaryApp />
     </SafeAreaProvider>
   );
@@ -79,16 +170,36 @@ function AdvocateDiaryApp() {
   const insets = useSafeAreaInsets();
   const topInset = Math.max(
     insets.top,
-    Platform.OS === 'android' ? Math.max(StatusBar.currentHeight || 0, 32) : 0
+    Platform.OS === 'android' ? Math.max(StatusBar.currentHeight || 0, 36) : 0
   );
   const bottomInset = Math.max(
     insets.bottom,
     Platform.OS === 'android' ? 48 : 0
   );
 
+  // Dark Mode Theme State & Persistence
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const theme = isDarkMode ? THEMES.dark : THEMES.light;
+
+  const toggleDarkMode = async () => {
+    try {
+      const nextMode = !isDarkMode;
+      setIsDarkMode(nextMode);
+      await AsyncStorage.setItem(THEME_STORAGE_KEY, nextMode ? 'dark' : 'light');
+    } catch (err) {
+      console.error('Failed to persist theme:', err);
+    }
+  };
+
   // Opens HOME screen first by default
   const [currentTab, setCurrentTab] = useState('HOME'); // 'HOME' | 'DIARY' | 'CASES' | 'CLIENTS' | 'PROFILE'
   const [cases, setCases] = useState([]);
+
+  // Dynamic Today Listings Count for Drawer & Navigation
+  const todayISO = formatDate(new Date());
+  const todayListedCount = cases.reduce((acc, c) => {
+    return acc + (c.hearings || []).filter((h) => h.date === todayISO).length;
+  }, 0);
 
   // User Profile & Onboarding State
   const [userProfile, setUserProfile] = useState(null);
@@ -125,7 +236,7 @@ function AdvocateDiaryApp() {
   // New Case Form State
   const [partyName, setPartyName] = useState('');
   const [caseNo, setCaseNo] = useState('');
-  const [initialHearingDate, setInitialHearingDate] = useState(formatDate(new Date()));
+  const [initialHearingDate, setInitialHearingDate] = useState(formatDisplayDate(new Date()));
   const [initialHearingTime, setInitialHearingTime] = useState('10:30 AM');
   const [courtName, setCourtName] = useState('');
   const [itemNo, setItemNo] = useState('');
@@ -133,6 +244,20 @@ function AdvocateDiaryApp() {
   const [phoneNo, setPhoneNo] = useState('');
   const [clientName, setClientName] = useState('');
   const [initialOrderNotes, setInitialOrderNotes] = useState('');
+
+  // Edit Case Details Modal State
+  const [editCaseModalVisible, setEditCaseModalVisible] = useState(false);
+  const [editingCase, setEditingCase] = useState(null);
+  const [editPartyName, setEditPartyName] = useState('');
+  const [editCaseNo, setEditCaseNo] = useState('');
+  const [editCourtName, setEditCourtName] = useState('');
+  const [editItemNo, setEditItemNo] = useState('');
+  const [editCaseType, setEditCaseType] = useState('');
+  const [editClientName, setEditClientName] = useState('');
+  const [editPhoneNo, setEditPhoneNo] = useState('');
+  const [editStatus, setEditStatus] = useState('PENDING');
+  const [editStatusBadge, setEditStatusBadge] = useState('');
+  const [editCaseBrief, setEditCaseBrief] = useState('');
 
   // Update Hearing Modal State
   const [activeCase, setActiveCase] = useState(null);
@@ -156,6 +281,12 @@ function AdvocateDiaryApp() {
 
   const initApp = async () => {
     try {
+      // 0. Check dark mode theme preference
+      const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+      if (savedTheme === 'dark') {
+        setIsDarkMode(true);
+      }
+
       // 1. Check user profile for first-time onboarding
       const profileData = await AsyncStorage.getItem(PROFILE_STORAGE_KEY);
       if (profileData) {
@@ -243,7 +374,8 @@ function AdvocateDiaryApp() {
   const formatHumanDate = (dateStr) => {
     if (!dateStr) return 'Select Next Date...';
     try {
-      const parts = dateStr.split('-');
+      const iso = parseToISODate(dateStr);
+      const parts = iso.split('-');
       if (parts.length === 3) {
         const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
         return d.toLocaleDateString('en-US', {
@@ -317,7 +449,7 @@ function AdvocateDiaryApp() {
       .sort((a, b) => b.date.localeCompare(a.date));
 
     if (past.length > 0) {
-      return `Last Hearing: ${past[0].date} • Previous Order: ${past[0].orderNotes}`;
+      return `Last Hearing: ${formatDateDMY(past[0].date)} • Previous Order: ${past[0].orderNotes}`;
     }
     return `First Listing • Court: ${activeCase.courtName || 'Court 3, High Court'}`;
   };
@@ -338,7 +470,7 @@ function AdvocateDiaryApp() {
 
   const handleShareCase = async (caseItem, hearingItem) => {
     try {
-      const text = `*Cause List Listing*\nCase: ${caseItem.caseNo}\nTitle: ${caseItem.partyName}\nCourt: ${caseItem.courtName}\nTime: ${hearingItem?.time || '10:30 AM'}\nOrder: ${hearingItem?.orderNotes || 'Listed'}`;
+      const text = `*Cause List Listing*\nCase: ${caseItem.caseNo}\nTitle: ${caseItem.partyName}\nCourt: ${caseItem.courtName}\nOrder: ${hearingItem?.orderNotes || 'Listed'}`;
       if (Platform.OS === 'web') {
         if (navigator.share) {
           await navigator.share({ title: caseItem.caseNo, text });
@@ -358,7 +490,7 @@ function AdvocateDiaryApp() {
     try {
       const backupPayload = {
         app: 'ado-desk',
-        version: '2.0.0',
+        version: '3.0.0',
         exportedAt: new Date().toISOString(),
         userProfile: userProfile || null,
         cases: cases,
@@ -594,14 +726,15 @@ function AdvocateDiaryApp() {
   // --- CASE CREATION & UPDATES ---
 
   const handleCreateNewCase = () => {
-    if (!partyName.trim() || !caseNo.trim() || !initialHearingDate.trim()) {
-      alert('Please enter Party Name, Case Number, and Hearing Date.');
+    const isoDate = parseToISODate(initialHearingDate);
+    if (!partyName.trim() || !caseNo.trim() || !isoDate) {
+      alert('Please enter Party Name, Case Number, and a valid Hearing Date in DD/MM/YYYY format.');
       return;
     }
 
     const firstHearing = {
       id: 'h_' + Date.now().toString(),
-      date: initialHearingDate.trim(),
+      date: isoDate,
       time: initialHearingTime.trim() || '10:30 AM',
       orderTitle: 'FIRST LISTING NOTE',
       orderNotes: initialOrderNotes.trim() || 'Case registered / First listing before court.',
@@ -631,6 +764,7 @@ function AdvocateDiaryApp() {
     setCaseType('');
     setPhoneNo('');
     setClientName('');
+    setInitialHearingDate(formatDisplayDate(new Date()));
     setInitialOrderNotes('');
     setNewCaseModalVisible(false);
   };
@@ -638,8 +772,8 @@ function AdvocateDiaryApp() {
   const openUpdateModal = (caseItem, hearingItem) => {
     setActiveCase(caseItem);
     setActiveHearingId(hearingItem.id);
-    setTodayOrderNotes(hearingItem.orderNotes || '');
-    setNextHearingDate(hearingItem.adjournedTo || '2026-11-13');
+    setTodayOrderNotes(''); // Today's Order starts strictly empty with no pre-fill
+    setNextHearingDate(hearingItem.adjournedTo || formatDate(new Date()));
     setNextHearingTime(hearingItem.time || '10:30 AM');
     setNextCauseListType(hearingItem.causeListType || 'Regular Cause List');
     setIsDecreed(caseItem.status === 'DECREED');
@@ -647,11 +781,6 @@ function AdvocateDiaryApp() {
   };
 
   const handleSaveHearingProgress = () => {
-    if (!todayOrderNotes.trim()) {
-      alert("Mandatory: Please add Today's Order / Description before proceeding.");
-      return;
-    }
-
     if (!isDecreed && !nextHearingDate.trim()) {
       alert('Please select a Next Hearing Date from the calendar, or mark the case as Decreed.');
       return;
@@ -697,6 +826,84 @@ function AdvocateDiaryApp() {
     setUpdateHearingModalVisible(false);
   };
 
+  // --- EDIT FULL CASE DETAILS HANDLERS ---
+  const openEditCaseModal = (caseItem) => {
+    if (!caseItem) return;
+    setEditingCase(caseItem);
+    setEditPartyName(caseItem.partyName || '');
+    setEditCaseNo(caseItem.caseNo || '');
+    setEditCourtName(caseItem.courtName || '');
+    setEditItemNo(caseItem.itemNo || '');
+    setEditCaseType(caseItem.caseType || '');
+    setEditClientName(caseItem.clientName || '');
+    setEditPhoneNo(caseItem.phoneNo || '');
+    setEditStatus(caseItem.status || 'PENDING');
+    setEditStatusBadge(caseItem.statusBadge || '');
+    const firstOrder =
+      caseItem.hearings && caseItem.hearings.length > 0 ? caseItem.hearings[0].orderNotes : '';
+    setEditCaseBrief(firstOrder || '');
+    setEditCaseModalVisible(true);
+  };
+
+  const handleSaveCaseDetails = () => {
+    if (!editingCase) return;
+    if (!editPartyName.trim() || !editCaseNo.trim()) {
+      Alert.alert('Required Fields', 'Party Name and Case Number cannot be empty.');
+      return;
+    }
+
+    const updatedCases = cases.map((c) => {
+      if (c.id !== editingCase.id) return c;
+      const updatedHearings = [...(c.hearings || [])];
+      if (updatedHearings.length > 0) {
+        updatedHearings[0] = {
+          ...updatedHearings[0],
+          orderNotes: editCaseBrief.trim() || updatedHearings[0].orderNotes,
+        };
+      }
+      return {
+        ...c,
+        partyName: editPartyName.trim(),
+        caseNo: editCaseNo.trim(),
+        courtName: editCourtName.trim() || 'Court 3, High Court',
+        itemNo: editItemNo.trim(),
+        caseType: editCaseType.trim(),
+        clientName:
+          editClientName.trim() ||
+          (editPartyName.trim() ? editPartyName.trim().split(/ vs | v\. | VS | V\/S /i)[0] : 'Client'),
+        phoneNo: editPhoneNo.trim(),
+        status: editStatus,
+        statusBadge: editStatusBadge.trim() || (editStatus === 'DECREED' ? 'Decreed in Favor' : ''),
+        hearings: updatedHearings,
+      };
+    });
+
+    saveCases(updatedCases);
+    setEditCaseModalVisible(false);
+    setEditingCase(null);
+  };
+
+  const confirmDeleteFromEdit = () => {
+    if (!editingCase) return;
+    Alert.alert(
+      'Delete Case File',
+      `Are you sure you want to permanently delete ${editingCase.caseNo} (${editingCase.partyName}) from your case ledger?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Permanently',
+          style: 'destructive',
+          onPress: () => {
+            const filtered = cases.filter((c) => c.id !== editingCase.id);
+            saveCases(filtered);
+            setEditCaseModalVisible(false);
+            setEditingCase(null);
+          },
+        },
+      ]
+    );
+  };
+
   const handleDeleteCase = () => {
     if (!activeCase) return;
     const filtered = cases.filter((c) => c.id !== activeCase.id);
@@ -733,9 +940,9 @@ function AdvocateDiaryApp() {
     ).length;
 
     return (
-      <View style={styles.homeMainWrapper}>
+      <View style={[styles.homeMainWrapper, isDarkMode && { backgroundColor: theme.bg }]}>
         <ScrollView
-          style={styles.homeScrollPage}
+          style={[styles.homeScrollPage, isDarkMode && { backgroundColor: theme.bg }]}
           contentContainerStyle={[
             styles.homeScrollContent,
             { paddingBottom: 110 + bottomInset },
@@ -746,11 +953,11 @@ function AdvocateDiaryApp() {
           <View style={styles.homeTopBar}>
             <TouchableOpacity
               aria-label="Open Navigation Drawer"
-              style={styles.homeMenuBtn}
+              style={[styles.homeMenuBtn, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}
               onPress={() => setDrawerOpen(true)}
               activeOpacity={0.8}
             >
-              <Text style={styles.homeMenuIcon}>☰</Text>
+              <Text style={[styles.homeMenuIcon, isDarkMode && { color: theme.text }]}>☰</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -758,8 +965,8 @@ function AdvocateDiaryApp() {
               onPress={() => setCurrentTab('PROFILE')}
               activeOpacity={0.85}
             >
-              <View style={styles.homeAvatarCircle}>
-                <Text style={styles.homeAvatarText}>{firstInitial}</Text>
+              <View style={[styles.homeAvatarCircle, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.homeAvatarText, isDarkMode && { color: theme.primary }]}>{firstInitial}</Text>
               </View>
               <View style={styles.homeAvatarDot} />
             </TouchableOpacity>
@@ -767,20 +974,20 @@ function AdvocateDiaryApp() {
 
           {/* Personal Greeting Header (Spacious & Dignified) */}
           <View style={styles.homeGreetingSection}>
-            <Text style={styles.homeGreetingSmall}>{getTimeBasedGreeting()}</Text>
-            <Text style={styles.homeGreetingName}>{displayName}</Text>
+            <Text style={[styles.homeGreetingSmall, isDarkMode && { color: theme.subtext }]}>{getTimeBasedGreeting()}</Text>
+            <Text style={[styles.homeGreetingName, isDarkMode && { color: theme.text }]}>{displayName}</Text>
             <View style={styles.homeDeskSubtitleRow}>
               <Text style={styles.homeDeskVerifiedIcon}>☑</Text>
-              <Text style={styles.homeDeskSubtitleText}>
+              <Text style={[styles.homeDeskSubtitleText, isDarkMode && { color: theme.subtext }]}>
                 Here is your practice desk today • {todayStr}
               </Text>
             </View>
 
             {/* Dashboard Stats */}
             <View style={styles.homeStatsRow}>
-              <View style={styles.homeStatsPill}>
+              <View style={[styles.homeStatsPill, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <View style={styles.homeStatsDot} />
-                <Text style={styles.homeStatsText}>
+                <Text style={[styles.homeStatsText, isDarkMode && { color: theme.subtext }]}>
                   Total active files: {activeCasesCount}
                 </Text>
               </View>
@@ -816,24 +1023,24 @@ function AdvocateDiaryApp() {
 
             {/* Card 2: Search Case (Crisp White Porcelain Surface) */}
             <TouchableOpacity
-              style={styles.searchLedgerCard}
+              style={[styles.searchLedgerCard, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}
               onPress={() => setCurrentTab('CASES')}
               activeOpacity={0.92}
             >
-              <View style={styles.searchLedgerCardTag}>
-                <Text style={{ fontSize: 11, color: '#0051d5' }}>🔍</Text>
-                <Text style={styles.searchLedgerCardTagText}>ARCHIVE REGISTRY</Text>
+              <View style={[styles.searchLedgerCardTag, isDarkMode && { backgroundColor: theme.chipBg }]}>
+                <Text style={{ fontSize: 11, color: isDarkMode ? theme.primary : '#0051d5' }}>🔍</Text>
+                <Text style={[styles.searchLedgerCardTagText, isDarkMode && { color: theme.primary }]}>ARCHIVE REGISTRY</Text>
               </View>
 
               <View style={styles.cardContentRow}>
                 <View style={styles.cardTextWrap}>
-                  <Text style={styles.searchLedgerCardTitle}>Search Case Ledger</Text>
-                  <Text style={styles.searchLedgerCardDesc}>
+                  <Text style={[styles.searchLedgerCardTitle, isDarkMode && { color: theme.text }]}>Search Case Ledger</Text>
+                  <Text style={[styles.searchLedgerCardDesc, isDarkMode && { color: theme.subtext }]}>
                     Find by case number, party name, or phone
                   </Text>
                 </View>
 
-                <View style={styles.searchLedgerCardIconBox}>
+                <View style={[styles.searchLedgerCardIconBox, isDarkMode && { backgroundColor: theme.subCardBg }]}>
                   <Text style={{ fontSize: 20 }}>🔍</Text>
                 </View>
               </View>
@@ -843,7 +1050,7 @@ function AdvocateDiaryApp() {
           {/* Serene Practice Quote Footer Stamp */}
           <View style={styles.homeChamberFooter}>
             <Text style={{ fontSize: 15, color: '#76777d' }}>⚖</Text>
-            <Text style={styles.homeChamberText}>
+            <Text style={[styles.homeChamberText, isDarkMode && { color: theme.muted }]}>
               LAW OFFICE OF {displayName.toUpperCase()} • CHAMBER 402
             </Text>
           </View>
@@ -851,21 +1058,21 @@ function AdvocateDiaryApp() {
 
         {/* Interactive Floating Dock Pill Overlay */}
         <View style={[styles.floatingDockWrap, { paddingBottom: bottomInset + 14 }]}>
-          <View style={styles.floatingDockPill}>
+          <View style={[styles.floatingDockPill, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
             {/* Home Icon */}
             <TouchableOpacity
               style={styles.floatingDockBtn}
               onPress={() => setCurrentTab('HOME')}
               activeOpacity={0.7}
             >
-              <Text style={[styles.floatingDockIcon, { color: '#0051d5' }]}>🏠</Text>
+              <Text style={[styles.floatingDockIcon, { color: isDarkMode ? theme.primary : '#0051d5' }]}>🏠</Text>
             </TouchableOpacity>
 
             {/* Center + Floating Button */}
             <TouchableOpacity
-              style={styles.floatingDockCenterBtn}
+              style={[styles.floatingDockCenterBtn, isDarkMode && { backgroundColor: theme.primary }]}
               onPress={() => {
-                setInitialHearingDate(formatDate(new Date()));
+                setInitialHearingDate(formatDisplayDate(new Date()));
                 setNewCaseModalVisible(true);
               }}
               activeOpacity={0.85}
@@ -879,7 +1086,7 @@ function AdvocateDiaryApp() {
               onPress={() => setCurrentTab('DIARY')}
               activeOpacity={0.7}
             >
-              <Text style={[styles.floatingDockIcon, { color: '#76777d' }]}>📅</Text>
+              <Text style={[styles.floatingDockIcon, { color: isDarkMode ? theme.muted : '#76777d' }]}>📅</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1013,14 +1220,14 @@ function AdvocateDiaryApp() {
           <View>
             <View style={styles.scheduleTitleWrap}>
               <View style={styles.verticalBlueBar} />
-              <Text style={styles.scheduleTitleText}>{dayName} Schedule</Text>
+              <Text style={[styles.scheduleTitleText, isDarkMode && { color: theme.text }]}>{dayName} Schedule</Text>
             </View>
-            <Text style={styles.scheduleSubtitleText}>High Court of Orissa & Commercial Division</Text>
+            <Text style={[styles.scheduleSubtitleText, isDarkMode && { color: theme.subtext }]}>High Court of Orissa & Commercial Division</Text>
           </View>
 
-          <View style={styles.hearingsCountBadge}>
+          <View style={[styles.hearingsCountBadge, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={styles.hearingsCountDot} />
-            <Text style={styles.hearingsCountText}>
+            <Text style={[styles.hearingsCountText, isDarkMode && { color: theme.subtext }]}>
               {dailyItems.length} {dailyItems.length === 1 ? 'Hearing' : 'Hearings'} Listed
             </Text>
           </View>
@@ -1030,14 +1237,14 @@ function AdvocateDiaryApp() {
         {dailyItems.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>⚖️</Text>
-            <Text style={styles.emptyStateTitle}>No hearings listed today.</Text>
-            <Text style={styles.emptyStateDesc}>
+            <Text style={[styles.emptyStateTitle, isDarkMode && { color: theme.text }]}>No hearings listed today.</Text>
+            <Text style={[styles.emptyStateDesc, isDarkMode && { color: theme.subtext }]}>
               Tap '+ New Case' to add your first matter.
             </Text>
             <TouchableOpacity
               style={styles.emptyActionBtn}
               onPress={() => {
-                setInitialHearingDate(formatDate(selectedDate));
+                setInitialHearingDate(formatDisplayDate(new Date()));
                 setNewCaseModalVisible(true);
               }}
               activeOpacity={0.85}
@@ -1062,28 +1269,13 @@ function AdvocateDiaryApp() {
                 style={[
                   styles.hearingCard,
                   { borderLeftColor: accentColor },
+                  isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border },
                 ]}
                 onPress={() => openUpdateModal(caseData, hearingData)}
                 activeOpacity={0.88}
               >
                 {/* Top Badges Row */}
                 <View style={styles.cardBadgesRow}>
-                  <View
-                    style={[
-                      styles.pillBadge,
-                      isUrgentCase ? styles.pillUrgentRed : isDecreedCase ? styles.pillLightGreen : styles.pillLightBlue,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.pillBadgeText,
-                        isUrgentCase ? styles.textUrgentRed : isDecreedCase ? styles.textDarkGreen : styles.textBlue,
-                      ]}
-                    >
-                      🕒 {hearingData.time || '10:30 AM'}
-                    </Text>
-                  </View>
-
                   <View style={[styles.pillBadge, styles.pillLightGray]}>
                     <Text style={[styles.pillBadgeText, styles.textDarkGray]}>
                       🏛 {caseData.courtName || 'Court 3, High Court'}
@@ -1125,11 +1317,11 @@ function AdvocateDiaryApp() {
                 </View>
 
                 {/* Case Title */}
-                <Text style={styles.casePartyNameText}>{caseData.partyName}</Text>
+                <Text style={[styles.casePartyNameText, isDarkMode && { color: theme.text }]}>{caseData.partyName}</Text>
 
                 {/* Case Subtitle / Meta */}
                 <View style={styles.caseMetaRow}>
-                  <Text style={styles.caseNoBlueText}>📄 {caseData.caseNo}</Text>
+                  <Text style={[styles.caseNoBlueText, isDarkMode && { color: theme.primary }]}>📄 {caseData.caseNo}</Text>
                   {caseData.caseType ? (
                     <>
                       <Text style={styles.metaBullet}>•</Text>
@@ -1137,6 +1329,7 @@ function AdvocateDiaryApp() {
                         style={[
                           styles.caseTypeText,
                           caseData.caseType === 'Caveat Lodged' && styles.caveatLodgedText,
+                          isDarkMode && { color: theme.subtext },
                         ]}
                       >
                         {caseData.caseType}
@@ -1149,7 +1342,7 @@ function AdvocateDiaryApp() {
                 {lastHearingDate ? (
                   <View style={styles.lastHearingRow}>
                     <Text style={styles.lastHearingIcon}>🕒</Text>
-                    <Text style={styles.lastHearingText}>Last Hearing: {lastHearingDate}</Text>
+                    <Text style={[styles.lastHearingText, isDarkMode && { color: theme.subtext }]}>Last Hearing: {lastHearingDate}</Text>
                   </View>
                 ) : null}
 
@@ -1162,6 +1355,7 @@ function AdvocateDiaryApp() {
                       : isUrgentCase
                       ? styles.orderNoteCardRed
                       : styles.orderNoteCardBlue,
+                    isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border },
                   ]}
                 >
                   <View style={styles.orderNoteHeader}>
@@ -1178,21 +1372,22 @@ function AdvocateDiaryApp() {
                           : hearingData.orderTitle === 'INTERIM PROTECTION STATUS'
                           ? styles.orderTitleBlue
                           : styles.orderTitleSlate,
+                        isDarkMode && { color: isDecreedCase ? '#34d399' : isUrgentCase ? '#f87171' : theme.primary },
                       ]}
                     >
                       {hearingData.orderTitle || (isDecreedCase ? 'FINAL JUDGMENT PRONOUNCED' : 'LAST ORDER PASSED')}
                     </Text>
                   </View>
-                  <Text style={styles.orderNoteBodyText}>{hearingData.orderNotes}</Text>
+                  <Text style={[styles.orderNoteBodyText, isDarkMode && { color: theme.text }]}>{hearingData.orderNotes}</Text>
                 </View>
 
                 {/* Adjourned To Strip */}
                 {nextScheduled ? (
-                  <View style={styles.adjournedStrip}>
-                    <Text style={styles.adjournedText}>
+                  <View style={[styles.adjournedStrip, isDarkMode && { backgroundColor: theme.subCardBg }]}>
+                    <Text style={[styles.adjournedText, isDarkMode && { color: theme.text }]}>
                       ➔ Adjourned to: <Text style={styles.adjournedDateBold}>{nextScheduled}</Text>
                     </Text>
-                    <Text style={styles.causeListTypeText}>{causeListType || 'Regular Cause List'}</Text>
+                    <Text style={[styles.causeListTypeText, isDarkMode && { color: theme.primary }]}>{causeListType || 'Regular Cause List'}</Text>
                   </View>
                 ) : null}
 
@@ -1240,6 +1435,13 @@ function AdvocateDiaryApp() {
                       </TouchableOpacity>
                     ) : (
                       <View style={styles.iconActionRow}>
+                        <TouchableOpacity
+                          style={[styles.iconCircleBtn, isDarkMode && { borderColor: theme.border, backgroundColor: theme.subCardBg }]}
+                          onPress={() => openEditCaseModal(caseData)}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                          <Text style={[styles.iconCircleText, isDarkMode && { color: theme.text }]}>✎</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.iconCircleBtn}
                           onPress={() => handleShareCase(caseData, hearingData)}
@@ -1333,10 +1535,10 @@ function AdvocateDiaryApp() {
         </View>
 
         <View style={styles.searchBarContainer}>
-          <View style={styles.searchBarWrapper}>
+          <View style={[styles.searchBarWrapper, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
-              style={styles.searchTextInput}
+              style={[styles.searchTextInput, isDarkMode && { color: theme.text }]}
               placeholder="Search by Case No., Party, Court, Mobile..."
               placeholderTextColor="#94a3b8"
               value={searchQuery}
@@ -1359,59 +1561,60 @@ function AdvocateDiaryApp() {
           contentContainerStyle={styles.filterChipsRow}
         >
           <TouchableOpacity
-            style={[styles.filterChip, caseFilter === 'ALL' && styles.filterChipActive]}
+            style={[styles.filterChip, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }, caseFilter === 'ALL' && styles.filterChipActive]}
             onPress={() => setCaseFilter('ALL')}
             activeOpacity={0.75}
           >
-            <Text style={[styles.filterChipText, caseFilter === 'ALL' && styles.filterChipTextActive]}>
+            <Text style={[styles.filterChipText, isDarkMode && { color: theme.subtext }, caseFilter === 'ALL' && styles.filterChipTextActive]}>
               All ({cases.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.filterChip, caseFilter === 'PENDING' && styles.filterChipActive]}
+            style={[styles.filterChip, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }, caseFilter === 'PENDING' && styles.filterChipActive]}
             onPress={() => setCaseFilter('PENDING')}
             activeOpacity={0.75}
           >
             <Text
-              style={[styles.filterChipText, caseFilter === 'PENDING' && styles.filterChipTextActive]}
+              style={[styles.filterChipText, isDarkMode && { color: theme.subtext }, caseFilter === 'PENDING' && styles.filterChipTextActive]}
             >
               Pending ({pendingCount})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.filterChip, caseFilter === 'DECREED' && styles.filterChipActive]}
+            style={[styles.filterChip, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }, caseFilter === 'DECREED' && styles.filterChipActive]}
             onPress={() => setCaseFilter('DECREED')}
             activeOpacity={0.75}
           >
             <Text
-              style={[styles.filterChipText, caseFilter === 'DECREED' && styles.filterChipTextActive]}
+              style={[styles.filterChipText, isDarkMode && { color: theme.subtext }, caseFilter === 'DECREED' && styles.filterChipTextActive]}
             >
               Decreed ({decreedCount})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.filterChip, caseFilter === 'URGENT' && styles.filterChipActive]}
+            style={[styles.filterChip, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }, caseFilter === 'URGENT' && styles.filterChipActive]}
             onPress={() => setCaseFilter('URGENT')}
             activeOpacity={0.75}
           >
             <Text
-              style={[styles.filterChipText, caseFilter === 'URGENT' && styles.filterChipTextActive]}
+              style={[styles.filterChipText, isDarkMode && { color: theme.subtext }, caseFilter === 'URGENT' && styles.filterChipTextActive]}
             >
               Urgent / Caveat ({urgentCount})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.filterChip, caseFilter === 'HIGH_COURT' && styles.filterChipActive]}
+            style={[styles.filterChip, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }, caseFilter === 'HIGH_COURT' && styles.filterChipActive]}
             onPress={() => setCaseFilter('HIGH_COURT')}
             activeOpacity={0.75}
           >
             <Text
               style={[
                 styles.filterChipText,
+                isDarkMode && { color: theme.subtext },
                 caseFilter === 'HIGH_COURT' && styles.filterChipTextActive,
               ]}
             >
@@ -1421,8 +1624,8 @@ function AdvocateDiaryApp() {
         </ScrollView>
 
         <View style={styles.resultsCounterRow}>
-          <Text style={styles.resultsCountText}>
-            Showing <Text style={{ fontWeight: '800', color: '#0f172a' }}>{filteredCases.length}</Text> Matching Matters
+          <Text style={[styles.resultsCountText, isDarkMode && { color: theme.subtext }]}>
+            Showing <Text style={[{ fontWeight: '800', color: '#0f172a' }, isDarkMode && { color: theme.text }]}>{filteredCases.length}</Text> Matching Matters
           </Text>
           {searchQuery || caseFilter !== 'ALL' ? (
             <TouchableOpacity
@@ -1444,7 +1647,7 @@ function AdvocateDiaryApp() {
             <TouchableOpacity
               style={styles.emptyActionBtn}
               onPress={() => {
-                setInitialHearingDate(formatDate(selectedDate));
+                setInitialHearingDate(formatDisplayDate(new Date()));
                 setNewCaseModalVisible(true);
               }}
               activeOpacity={0.85}
@@ -1480,7 +1683,11 @@ function AdvocateDiaryApp() {
             return (
               <TouchableOpacity
                 key={c.id}
-                style={[styles.hearingCard, { borderLeftColor: accentColor }]}
+                style={[
+                  styles.hearingCard,
+                  { borderLeftColor: accentColor },
+                  isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border },
+                ]}
                 onPress={() => latestHearing && openUpdateModal(c, latestHearing)}
                 activeOpacity={0.88}
               >
@@ -1520,10 +1727,10 @@ function AdvocateDiaryApp() {
                   ) : null}
                 </View>
 
-                <Text style={styles.casePartyNameText}>{c.partyName}</Text>
+                <Text style={[styles.casePartyNameText, isDarkMode && { color: theme.text }]}>{c.partyName}</Text>
 
                 <View style={styles.caseMetaRow}>
-                  <Text style={styles.caseNoBlueText}>📄 {c.caseNo}</Text>
+                  <Text style={[styles.caseNoBlueText, isDarkMode && { color: theme.primary }]}>📄 {c.caseNo}</Text>
                   {c.caseType ? (
                     <>
                       <Text style={styles.metaBullet}>•</Text>
@@ -1531,6 +1738,7 @@ function AdvocateDiaryApp() {
                         style={[
                           styles.caseTypeText,
                           c.caseType === 'Caveat Lodged' && styles.caveatLodgedText,
+                          isDarkMode && { color: theme.subtext },
                         ]}
                       >
                         {c.caseType}
@@ -1541,25 +1749,25 @@ function AdvocateDiaryApp() {
 
                 {c.phoneNo ? (
                   <TouchableOpacity
-                    style={[styles.phoneContactPill, { alignSelf: 'flex-start', marginVertical: 6 }]}
+                    style={[styles.phoneContactPill, { alignSelf: 'flex-start', marginVertical: 6 }, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border }]}
                     onPress={() => handlePhoneCall(c.phoneNo)}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.phoneIcon}>📞</Text>
-                    <Text style={styles.phoneNumberText}>{c.phoneNo}</Text>
+                    <Text style={[styles.phoneNumberText, isDarkMode && { color: theme.text }]}>{c.phoneNo}</Text>
                     {c.clientName ? (
-                      <Text style={styles.clientLabelText}>({c.clientName})</Text>
+                      <Text style={[styles.clientLabelText, isDarkMode && { color: theme.subtext }]}>({c.clientName})</Text>
                     ) : null}
                   </TouchableOpacity>
                 ) : null}
 
-                <View style={styles.searchOrdersContainer}>
-                  <Text style={styles.orderNoteTitle}>CHRONOLOGICAL HEARINGS & ORDERS</Text>
+                <View style={[styles.searchOrdersContainer, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border }]}>
+                  <Text style={[styles.orderNoteTitle, isDarkMode && { color: theme.muted }]}>CHRONOLOGICAL HEARINGS & ORDERS</Text>
                   {(c.hearings || []).map((h, idx) => (
-                    <View key={h.id || idx} style={styles.searchOrderRow}>
+                    <View key={h.id || idx} style={[styles.searchOrderRow, isDarkMode && { borderBottomColor: theme.border }]}>
                       <View style={styles.searchOrderHeaderLine}>
-                        <Text style={styles.searchOrderDate}>
-                          • {h.date} ({h.time || '10:30 AM'}):
+                        <Text style={[styles.searchOrderDate, isDarkMode && { color: theme.primary }]}>
+                          • {formatDateDMY(h.date)}:
                         </Text>
                         {h.completed ? (
                           <Text style={styles.searchOrderDoneBadge}>Completed</Text>
@@ -1567,10 +1775,10 @@ function AdvocateDiaryApp() {
                           <Text style={styles.searchOrderPendingBadge}>Scheduled</Text>
                         )}
                       </View>
-                      <Text style={styles.searchOrderNotesText}>{h.orderNotes}</Text>
+                      <Text style={[styles.searchOrderNotesText, isDarkMode && { color: theme.text }]}>{h.orderNotes}</Text>
                       {h.adjournedTo ? (
-                        <Text style={styles.searchOrderAdjournedText}>
-                          ➔ Adjourned to: {h.adjournedTo} ({h.causeListType || 'Next Listing'})
+                        <Text style={[styles.searchOrderAdjournedText, isDarkMode && { color: theme.subtext }]}>
+                          ➔ Adjourned to: {formatDateDMY(h.adjournedTo)} ({h.causeListType || 'Next Listing'})
                         </Text>
                       ) : null}
                     </View>
@@ -1578,17 +1786,29 @@ function AdvocateDiaryApp() {
                 </View>
 
                 <View style={styles.cardFooterRow}>
-                  <TouchableOpacity
-                    style={styles.outlineActionButton}
-                    onPress={() => {
-                      setSelectedDocCase(c);
-                      setDocModalVisible(true);
-                    }}
-                  >
-                    <Text style={styles.outlineActionText}>📖 View Brief</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                    <TouchableOpacity
+                      style={[styles.outlineActionButton, isDarkMode && { borderColor: theme.border, backgroundColor: theme.subCardBg }]}
+                      onPress={() => {
+                        setSelectedDocCase(c);
+                        setDocModalVisible(true);
+                      }}
+                    >
+                      <Text style={[styles.outlineActionText, isDarkMode && { color: theme.subtext }]}>📖 Brief</Text>
+                    </TouchableOpacity>
 
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      style={[styles.outlineActionButton, { borderColor: '#2563eb', backgroundColor: isDarkMode ? '#1e293b' : '#eff6ff' }]}
+                      onPress={() => openEditCaseModal(c)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.outlineActionText, { color: '#2563eb', fontWeight: '700' }, isDarkMode && { color: '#60a5fa' }]}>
+                        ✎ Edit Details
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                     {latestHearing ? (
                       <TouchableOpacity
                         style={styles.primaryActionButton}
@@ -1599,10 +1819,10 @@ function AdvocateDiaryApp() {
                     ) : null}
 
                     <TouchableOpacity
-                      style={styles.iconCircleBtn}
+                      style={[styles.iconCircleBtn, isDarkMode && { borderColor: theme.border, backgroundColor: theme.subCardBg }]}
                       onPress={() => handleShareCase(c, latestHearing || {})}
                     >
-                      <Text style={styles.iconCircleText}>↗</Text>
+                      <Text style={[styles.iconCircleText, isDarkMode && { color: theme.text }]}>↗</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1641,30 +1861,30 @@ function AdvocateDiaryApp() {
         ]}
       >
         <View style={styles.clientHeaderSection}>
-          <Text style={styles.clientHeaderTitle}>Clients Directory</Text>
-          <Text style={styles.clientHeaderSubtitle}>{clientList.length} Connected Clients</Text>
+          <Text style={[styles.clientHeaderTitle, isDarkMode && { color: theme.text }]}>Clients Directory</Text>
+          <Text style={[styles.clientHeaderSubtitle, isDarkMode && { color: theme.subtext }]}>{clientList.length} Connected Clients</Text>
         </View>
 
         {clientList.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>👥</Text>
-            <Text style={styles.emptyStateTitle}>No Clients Registered</Text>
-            <Text style={styles.emptyStateDesc}>
+            <Text style={[styles.emptyStateTitle, isDarkMode && { color: theme.text }]}>No Clients Registered</Text>
+            <Text style={[styles.emptyStateDesc, isDarkMode && { color: theme.subtext }]}>
               Clients and their contact phone numbers will appear here automatically when you create case entries.
             </Text>
           </View>
         ) : (
           clientList.map((client, idx) => (
-            <View key={idx} style={styles.clientCard}>
+            <View key={idx} style={[styles.clientCard, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <View style={styles.clientTopRow}>
-                <View style={styles.clientAvatarSquare}>
-                  <Text style={styles.clientAvatarText}>
+                <View style={[styles.clientAvatarSquare, isDarkMode && { backgroundColor: theme.subCardBg }]}>
+                  <Text style={[styles.clientAvatarText, isDarkMode && { color: theme.primary }]}>
                     {client.clientName.charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.clientNameBig}>{client.clientName}</Text>
-                  <Text style={styles.clientPhoneSmall}>📞 {client.phoneNo}</Text>
+                  <Text style={[styles.clientNameBig, isDarkMode && { color: theme.text }]}>{client.clientName}</Text>
+                  <Text style={[styles.clientPhoneSmall, isDarkMode && { color: theme.subtext }]}>📞 {client.phoneNo}</Text>
                 </View>
                 {client.phoneNo !== 'No Phone' ? (
                   <TouchableOpacity
@@ -1677,11 +1897,11 @@ function AdvocateDiaryApp() {
               </View>
 
               <View style={styles.clientCasesSection}>
-                <Text style={styles.clientCasesTitle}>Associated Cases ({client.cases.length}):</Text>
+                <Text style={[styles.clientCasesTitle, isDarkMode && { color: theme.muted }]}>Associated Cases ({client.cases.length}):</Text>
                 {client.cases.map((cs) => (
-                  <View key={cs.id} style={styles.clientCasePill}>
-                    <Text style={styles.clientCaseNo}>{cs.caseNo}</Text>
-                    <Text style={styles.clientCaseParty} numberOfLines={1}>
+                  <View key={cs.id} style={[styles.clientCasePill, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border }]}>
+                    <Text style={[styles.clientCaseNo, isDarkMode && { color: theme.primary }]}>{cs.caseNo}</Text>
+                    <Text style={[styles.clientCaseParty, isDarkMode && { color: theme.text }]} numberOfLines={1}>
                       {cs.partyName}
                     </Text>
                   </View>
@@ -1718,22 +1938,22 @@ function AdvocateDiaryApp() {
         ]}
       >
         {/* Profile Dossier Hero Card */}
-        <View style={styles.profileBigCard}>
-          <View style={styles.profileBigAvatar}>
-            <Text style={styles.profileBigAvatarText}>{getInitials(name)}</Text>
+        <View style={[styles.profileBigCard, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.profileBigAvatar, isDarkMode && { backgroundColor: theme.subCardBg }]}>
+            <Text style={[styles.profileBigAvatarText, isDarkMode && { color: theme.primary }]}>{getInitials(name)}</Text>
           </View>
-          <Text style={styles.profileNameText}>{name}</Text>
-          <Text style={styles.profileSubText}>{designation}</Text>
-          <Text style={styles.profileBarAssocText}>🏛 {barAssoc}</Text>
-          <View style={styles.barBadgePill}>
-            <Text style={styles.barBadgePillText}>
+          <Text style={[styles.profileNameText, isDarkMode && { color: theme.text }]}>{name}</Text>
+          <Text style={[styles.profileSubText, isDarkMode && { color: theme.subtext }]}>{designation}</Text>
+          <Text style={[styles.profileBarAssocText, isDarkMode && { color: theme.primary }]}>🏛 {barAssoc}</Text>
+          <View style={[styles.barBadgePill, isDarkMode && { backgroundColor: theme.chipBg }]}>
+            <Text style={[styles.barBadgePillText, isDarkMode && { color: theme.chipText }]}>
               BAR COUNCIL REG: {enrNo}
             </Text>
           </View>
 
           {/* Edit Profile Details Action Button */}
           <TouchableOpacity
-            style={styles.editProfilePillBtn}
+            style={[styles.editProfilePillBtn, isDarkMode && { backgroundColor: theme.primary }]}
             onPress={openEditProfileModal}
             activeOpacity={0.85}
           >
@@ -1744,40 +1964,40 @@ function AdvocateDiaryApp() {
 
         {/* Practice Stats Overview */}
         <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statBoxNum}>{cases.length}</Text>
-            <Text style={styles.statBoxLabel}>Total Cases</Text>
+          <View style={[styles.statBox, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.statBoxNum, isDarkMode && { color: theme.text }]}>{cases.length}</Text>
+            <Text style={[styles.statBoxLabel, isDarkMode && { color: theme.subtext }]}>Total Cases</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statBoxNum}>{totalHearings}</Text>
-            <Text style={styles.statBoxLabel}>Total Listings</Text>
+          <View style={[styles.statBox, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.statBoxNum, isDarkMode && { color: theme.text }]}>{totalHearings}</Text>
+            <Text style={[styles.statBoxLabel, isDarkMode && { color: theme.subtext }]}>Total Listings</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statBoxNum}>{decreedCount}</Text>
-            <Text style={styles.statBoxLabel}>Decreed Files</Text>
+          <View style={[styles.statBox, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.statBoxNum, isDarkMode && { color: theme.text }]}>{decreedCount}</Text>
+            <Text style={[styles.statBoxLabel, isDarkMode && { color: theme.subtext }]}>Decreed Files</Text>
           </View>
         </View>
 
         {/* Chambers & Professional Office Card */}
-        <View style={styles.chamberCard}>
+        <View style={[styles.chamberCard, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.chamberCardHeaderRow}>
-            <Text style={styles.chamberTitle}>CHAMBERS & PRACTICE OFFICE</Text>
+            <Text style={[styles.chamberTitle, isDarkMode && { color: theme.muted }]}>CHAMBERS & PRACTICE OFFICE</Text>
             <TouchableOpacity onPress={openEditProfileModal} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.chamberEditLink}>Edit</Text>
+              <Text style={[styles.chamberEditLink, isDarkMode && { color: theme.primary }]}>Edit</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.chamberAddress}>{chamber}</Text>
+          <Text style={[styles.chamberAddress, isDarkMode && { color: theme.text }]}>{chamber}</Text>
           <View style={styles.chamberContactRow}>
             <TouchableOpacity
-              style={styles.chamberContactPill}
+              style={[styles.chamberContactPill, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border }]}
               onPress={() => handlePhoneCall(phone)}
               activeOpacity={0.8}
             >
               <Text style={{ fontSize: 13 }}>📞</Text>
-              <Text style={styles.chamberContactPillText}>{phone}</Text>
+              <Text style={[styles.chamberContactPillText, isDarkMode && { color: theme.text }]}>{phone}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.chamberContactPill}
+              style={[styles.chamberContactPill, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border }]}
               onPress={() => {
                 if (Platform.OS === 'web') {
                   window.open(`mailto:${email}`);
@@ -1790,31 +2010,31 @@ function AdvocateDiaryApp() {
               activeOpacity={0.8}
             >
               <Text style={{ fontSize: 13 }}>✉️</Text>
-              <Text style={styles.chamberContactPillText}>{email}</Text>
+              <Text style={[styles.chamberContactPillText, isDarkMode && { color: theme.text }]}>{email}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Diary Data & Storage Actions */}
-        <View style={styles.profileActionsCard}>
-          <Text style={styles.profileSectionTitle}>DIARY DATA & STORAGE</Text>
+        <View style={[styles.profileActionsCard, isDarkMode && { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.profileSectionTitle, isDarkMode && { color: theme.muted }]}>DIARY DATA & STORAGE</Text>
 
-          <TouchableOpacity style={styles.profileActionButton} onPress={handleCreateBackup} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.profileActionButton, isDarkMode && { borderBottomColor: theme.border }]} onPress={handleCreateBackup} activeOpacity={0.8}>
             <Text style={styles.profileActionIcon}>💾</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.profileActionMain}>Create Backup</Text>
-              <Text style={styles.profileActionSub}>Download & save encrypted JSON file to device</Text>
+              <Text style={[styles.profileActionMain, isDarkMode && { color: theme.text }]}>Create Backup</Text>
+              <Text style={[styles.profileActionSub, isDarkMode && { color: theme.subtext }]}>Download & save encrypted JSON file to device</Text>
             </View>
-            <Text style={styles.profileActionChevron}>›</Text>
+            <Text style={[styles.profileActionChevron, isDarkMode && { color: theme.muted }]}>›</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.profileActionButton} onPress={handleUploadBackup} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.profileActionButton, isDarkMode && { borderBottomColor: theme.border }]} onPress={handleUploadBackup} activeOpacity={0.8}>
             <Text style={styles.profileActionIcon}>📂</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.profileActionMain}>Restore from Backup</Text>
-              <Text style={styles.profileActionSub}>Choose backup file from device storage</Text>
+              <Text style={[styles.profileActionMain, isDarkMode && { color: theme.text }]}>Restore from Backup</Text>
+              <Text style={[styles.profileActionSub, isDarkMode && { color: theme.subtext }]}>Choose backup file from device storage</Text>
             </View>
-            <Text style={styles.profileActionChevron}>›</Text>
+            <Text style={[styles.profileActionChevron, isDarkMode && { color: theme.muted }]}>›</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -1827,29 +2047,29 @@ function AdvocateDiaryApp() {
         styles.safeContainer,
         {
           paddingTop: topInset,
-          backgroundColor: currentTab === 'HOME' ? '#f7f9fb' : '#ffffff',
+          backgroundColor: theme.bg,
         },
       ]}
     >
       <StatusBar
-        barStyle="dark-content"
-        backgroundColor={currentTab === 'HOME' ? '#f7f9fb' : '#ffffff'}
+        barStyle={theme.statusBarStyle}
+        backgroundColor={theme.statusBarBg}
         translucent={Platform.OS === 'android'}
       />
 
       {/* Top Application Bar (shown on non-Home tabs) */}
       {currentTab !== 'HOME' ? (
-        <View style={styles.topHeaderBar}>
+        <View style={[styles.topHeaderBar, isDarkMode && { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           <TouchableOpacity
             onPress={() => setDrawerOpen(true)}
-            style={styles.hamburgerBtn}
+            style={[styles.hamburgerBtn, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border }]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.hamburgerIcon}>☰</Text>
+            <Text style={[styles.hamburgerIcon, isDarkMode && { color: theme.text }]}>☰</Text>
           </TouchableOpacity>
 
           <View style={styles.topHeaderCenter}>
-            <Text style={styles.topHeaderTitle}>
+            <Text style={[styles.topHeaderTitle, isDarkMode && { color: theme.text }]}>
               {currentTab === 'DIARY'
                 ? 'Cause List & Diary'
                 : currentTab === 'CASES'
@@ -1858,8 +2078,8 @@ function AdvocateDiaryApp() {
                 ? 'Clients Directory'
                 : 'Advocate Profile'}
             </Text>
-            <View style={styles.topHeaderBadge}>
-              <Text style={styles.topHeaderBadgeText}>
+            <View style={[styles.topHeaderBadge, isDarkMode && { backgroundColor: theme.chipBg }]}>
+              <Text style={[styles.topHeaderBadgeText, isDarkMode && { color: theme.chipText }]}>
                 {currentTab === 'CASES' ? 'PERSONAL PRACTICE LEDGER' : 'ADVOCATE DIARY'}
               </Text>
             </View>
@@ -1869,7 +2089,7 @@ function AdvocateDiaryApp() {
             <TouchableOpacity
               style={styles.addCaseHeaderBtn}
               onPress={() => {
-                setInitialHearingDate(formatDate(selectedDate));
+                setInitialHearingDate(formatDisplayDate(new Date()));
                 setNewCaseModalVisible(true);
               }}
               activeOpacity={0.85}
@@ -1879,18 +2099,18 @@ function AdvocateDiaryApp() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.profileAvatarBtn}
+              style={[styles.profileAvatarBtn, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border }]}
               onPress={() => setCurrentTab('PROFILE')}
               activeOpacity={0.85}
             >
-              <Text style={styles.avatarIconText}>👤</Text>
+              <Text style={[styles.avatarIconText, isDarkMode && { color: theme.text }]}>👤</Text>
             </TouchableOpacity>
           </View>
         </View>
       ) : null}
 
       {/* Active Tab Screen */}
-      <View style={styles.mainContentArea}>
+      <View style={[styles.mainContentArea, { backgroundColor: theme.bg }]}>
         {currentTab === 'HOME' && renderHomeTab()}
         {currentTab === 'DIARY' && renderDiaryTab()}
         {currentTab === 'CASES' && renderCasesTab()}
@@ -1906,6 +2126,8 @@ function AdvocateDiaryApp() {
             {
               height: 60 + bottomInset,
               paddingBottom: bottomInset,
+              backgroundColor: theme.navBg,
+              borderTopColor: theme.border,
             },
           ]}
         >
@@ -1914,10 +2136,10 @@ function AdvocateDiaryApp() {
             onPress={() => setCurrentTab('HOME')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.bottomNavIcon, currentTab === 'HOME' && styles.bottomNavIconActive]}>
+            <Text style={[styles.bottomNavIcon, currentTab === 'HOME' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavIconActive) : (isDarkMode ? { color: theme.muted } : null)]}>
               🏠
             </Text>
-            <Text style={[styles.bottomNavLabel, currentTab === 'HOME' && styles.bottomNavLabelActive]}>
+            <Text style={[styles.bottomNavLabel, currentTab === 'HOME' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavLabelActive) : (isDarkMode ? { color: theme.subtext } : null)]}>
               Home
             </Text>
           </TouchableOpacity>
@@ -1927,10 +2149,10 @@ function AdvocateDiaryApp() {
             onPress={() => setCurrentTab('DIARY')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.bottomNavIcon, currentTab === 'DIARY' && styles.bottomNavIconActive]}>
+            <Text style={[styles.bottomNavIcon, currentTab === 'DIARY' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavIconActive) : (isDarkMode ? { color: theme.muted } : null)]}>
               📅
             </Text>
-            <Text style={[styles.bottomNavLabel, currentTab === 'DIARY' && styles.bottomNavLabelActive]}>
+            <Text style={[styles.bottomNavLabel, currentTab === 'DIARY' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavLabelActive) : (isDarkMode ? { color: theme.subtext } : null)]}>
               Diary
             </Text>
           </TouchableOpacity>
@@ -1940,10 +2162,10 @@ function AdvocateDiaryApp() {
             onPress={() => setCurrentTab('CASES')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.bottomNavIcon, currentTab === 'CASES' && styles.bottomNavIconActive]}>
+            <Text style={[styles.bottomNavIcon, currentTab === 'CASES' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavIconActive) : (isDarkMode ? { color: theme.muted } : null)]}>
               ⚖️
             </Text>
-            <Text style={[styles.bottomNavLabel, currentTab === 'CASES' && styles.bottomNavLabelActive]}>
+            <Text style={[styles.bottomNavLabel, currentTab === 'CASES' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavLabelActive) : (isDarkMode ? { color: theme.subtext } : null)]}>
               Cases
             </Text>
           </TouchableOpacity>
@@ -1953,10 +2175,10 @@ function AdvocateDiaryApp() {
             onPress={() => setCurrentTab('CLIENTS')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.bottomNavIcon, currentTab === 'CLIENTS' && styles.bottomNavIconActive]}>
+            <Text style={[styles.bottomNavIcon, currentTab === 'CLIENTS' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavIconActive) : (isDarkMode ? { color: theme.muted } : null)]}>
               👥
             </Text>
-            <Text style={[styles.bottomNavLabel, currentTab === 'CLIENTS' && styles.bottomNavLabelActive]}>
+            <Text style={[styles.bottomNavLabel, currentTab === 'CLIENTS' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavLabelActive) : (isDarkMode ? { color: theme.subtext } : null)]}>
               Clients
             </Text>
           </TouchableOpacity>
@@ -1966,10 +2188,10 @@ function AdvocateDiaryApp() {
             onPress={() => setCurrentTab('PROFILE')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.bottomNavIcon, currentTab === 'PROFILE' && styles.bottomNavIconActive]}>
+            <Text style={[styles.bottomNavIcon, currentTab === 'PROFILE' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavIconActive) : (isDarkMode ? { color: theme.muted } : null)]}>
               👤
             </Text>
-            <Text style={[styles.bottomNavLabel, currentTab === 'PROFILE' && styles.bottomNavLabelActive]}>
+            <Text style={[styles.bottomNavLabel, currentTab === 'PROFILE' ? (isDarkMode ? { color: theme.primary } : styles.bottomNavLabelActive) : (isDarkMode ? { color: theme.subtext } : null)]}>
               Profile
             </Text>
           </TouchableOpacity>
@@ -1980,7 +2202,7 @@ function AdvocateDiaryApp() {
       <Modal visible={drawerOpen} animationType="fade" transparent={true}>
         <View style={styles.drawerOverlay}>
           {/* Drawer Slide Panel (84% screen width, max 340px) */}
-          <View style={styles.drawerSheet}>
+          <View style={[styles.drawerSheet, isDarkMode && { backgroundColor: '#0f172a' }]}>
             {/* 1. Drawer Header (Deep Oxford Navy Surface #131b2e) */}
             <View style={[styles.drawerHeaderCard, { paddingTop: topInset + 14 }]}>
               {/* Ambient Decorative Scales Watermark */}
@@ -2103,7 +2325,7 @@ function AdvocateDiaryApp() {
                   </Text>
                 </View>
                 <View style={styles.drawerListedBadge}>
-                  <Text style={styles.drawerListedBadgeText}>Today: 4 Listed</Text>
+                  <Text style={styles.drawerListedBadgeText}>Today: {todayListedCount} Listed</Text>
                 </View>
               </TouchableOpacity>
 
@@ -2112,7 +2334,7 @@ function AdvocateDiaryApp() {
                 style={styles.drawerNavItem}
                 onPress={() => {
                   setDrawerOpen(false);
-                  setInitialHearingDate(formatDate(selectedDate));
+                  setInitialHearingDate(formatDisplayDate(new Date()));
                   setNewCaseModalVisible(true);
                 }}
                 activeOpacity={0.75}
@@ -2240,26 +2462,64 @@ function AdvocateDiaryApp() {
                   <Text style={styles.drawerNavItemText}>About App</Text>
                 </View>
                 <View style={styles.drawerVersionPill}>
-                  <Text style={styles.drawerVersionPillText}>v2.0.0</Text>
+                  <Text style={styles.drawerVersionPillText}>v3.0.0</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* APPEARANCE SECTION: DARK MODE TOGGLE */}
+              <Text style={[styles.drawerSectionLabel, { marginTop: 14 }, isDarkMode && { color: '#94a3b8' }]}>
+                APPEARANCE
+              </Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.drawerThemeCard,
+                  isDarkMode && { backgroundColor: '#131b2e', borderColor: '#232f48' },
+                ]}
+                onPress={toggleDarkMode}
+                activeOpacity={0.8}
+              >
+                <View style={styles.drawerDataCardLeft}>
+                  <View style={[styles.drawerDataIconBox, isDarkMode && { backgroundColor: '#1a233a' }]}>
+                    <Text style={{ fontSize: 18 }}>{isDarkMode ? '🌙' : '☀️'}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.drawerThemeCardTitle, isDarkMode && { color: '#f8fafc' }]}>
+                      Dark Mode
+                    </Text>
+                    <Text style={[styles.drawerThemeCardSubtitle, isDarkMode && { color: '#94a3b8' }]}>
+                      {isDarkMode ? 'Midnight Oxford (Active)' : 'Standard Light Theme'}
+                    </Text>
+                  </View>
+                </View>
+                <View
+                  style={[
+                    styles.drawerTogglePill,
+                    isDarkMode ? styles.drawerTogglePillActive : styles.drawerTogglePillInactive,
+                  ]}
+                >
+                  <View style={styles.drawerToggleThumb} />
                 </View>
               </TouchableOpacity>
 
               {/* DATA & CRYPTOGRAPHY SECTION */}
-              <Text style={[styles.drawerSectionLabel, { marginTop: 14 }]}>DATA & CRYPTOGRAPHY</Text>
+              <Text style={[styles.drawerSectionLabel, { marginTop: 14 }, isDarkMode && { color: '#94a3b8' }]}>
+                DATA & CRYPTOGRAPHY
+              </Text>
 
               {/* Create Backup Button */}
               <TouchableOpacity
-                style={styles.drawerDataCard}
+                style={[styles.drawerDataCard, isDarkMode && { backgroundColor: '#131b2e', borderColor: '#232f48' }]}
                 onPress={handleCreateBackup}
                 activeOpacity={0.8}
               >
                 <View style={styles.drawerDataCardLeft}>
-                  <View style={styles.drawerDataIconBox}>
+                  <View style={[styles.drawerDataIconBox, isDarkMode && { backgroundColor: '#1a233a' }]}>
                     <Text style={{ fontSize: 18 }}>💾</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.drawerDataTitle}>Create Backup</Text>
-                    <Text style={styles.drawerDataSubtitle}>Download & save to device storage</Text>
+                    <Text style={[styles.drawerDataTitle, isDarkMode && { color: '#f8fafc' }]}>Create Backup</Text>
+                    <Text style={[styles.drawerDataSubtitle, isDarkMode && { color: '#94a3b8' }]}>Download & save to device storage</Text>
                     <Text style={styles.drawerDataTimestamp}>Encrypted JSON File</Text>
                   </View>
                 </View>
@@ -2268,52 +2528,52 @@ function AdvocateDiaryApp() {
 
               {/* Restore Backup Button */}
               <TouchableOpacity
-                style={styles.drawerDataCard}
+                style={[styles.drawerDataCard, isDarkMode && { backgroundColor: '#131b2e', borderColor: '#232f48' }]}
                 onPress={handleUploadBackup}
                 activeOpacity={0.8}
               >
                 <View style={styles.drawerDataCardLeft}>
-                  <View style={styles.drawerDataIconBox}>
+                  <View style={[styles.drawerDataIconBox, isDarkMode && { backgroundColor: '#1a233a' }]}>
                     <Text style={{ fontSize: 18 }}>📂</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.drawerDataTitle}>Restore Backup</Text>
-                    <Text style={styles.drawerDataSubtitle}>Choose backup from device storage</Text>
+                    <Text style={[styles.drawerDataTitle, isDarkMode && { color: '#f8fafc' }]}>Restore Backup</Text>
+                    <Text style={[styles.drawerDataSubtitle, isDarkMode && { color: '#94a3b8' }]}>Choose backup from device storage</Text>
                   </View>
                 </View>
-                <View style={styles.drawerAesChip}>
-                  <Text style={styles.drawerAesChipText}>JSON</Text>
+                <View style={[styles.drawerAesChip, isDarkMode && { backgroundColor: '#1e293b' }]}>
+                  <Text style={[styles.drawerAesChipText, isDarkMode && { color: '#38bdf8' }]}>JSON</Text>
                 </View>
               </TouchableOpacity>
             </ScrollView>
 
             {/* 4. Drawer Footer & Security Telemetry */}
-            <View style={[styles.drawerFooterContainer, { paddingBottom: bottomInset + 12 }]}>
+            <View style={[styles.drawerFooterContainer, { paddingBottom: bottomInset + 12 }, isDarkMode && { backgroundColor: '#0b0f19', borderTopColor: '#1e293b' }]}>
               {/* On-Device Vault Status Card */}
-              <View style={styles.drawerVaultCard}>
+              <View style={[styles.drawerVaultCard, isDarkMode && { backgroundColor: '#131b2e', borderColor: '#232f48' }]}>
                 <View style={styles.drawerVaultHeaderRow}>
                   <View style={styles.drawerPulseDot} />
-                  <Text style={styles.drawerVaultTitle}>Offline-First Vault Active</Text>
+                  <Text style={[styles.drawerVaultTitle, isDarkMode && { color: '#f8fafc' }]}>Offline-First Vault Active</Text>
                 </View>
-                <Text style={styles.drawerVaultDesc}>
+                <Text style={[styles.drawerVaultDesc, isDarkMode && { color: '#94a3b8' }]}>
                   All cause briefs, orders, and contacts securely encrypted on local memory.
                 </Text>
                 <View style={styles.drawerStatsGrid}>
-                  <View style={styles.drawerStatBox}>
-                    <Text style={styles.drawerStatNumber}>{cases.length}</Text>
-                    <Text style={styles.drawerStatLabel}>Total</Text>
+                  <View style={[styles.drawerStatBox, isDarkMode && { backgroundColor: '#1a233a' }]}>
+                    <Text style={[styles.drawerStatNumber, isDarkMode && { color: '#f8fafc' }]}>{cases.length}</Text>
+                    <Text style={[styles.drawerStatLabel, isDarkMode && { color: '#94a3b8' }]}>Total</Text>
                   </View>
-                  <View style={styles.drawerStatBox}>
-                    <Text style={[styles.drawerStatNumber, { color: '#0051d5' }]}>
+                  <View style={[styles.drawerStatBox, isDarkMode && { backgroundColor: '#1a233a' }]}>
+                    <Text style={[styles.drawerStatNumber, { color: '#0051d5' }, isDarkMode && { color: '#38bdf8' }]}>
                       {cases.filter((c) => c.status !== 'Disposed' && c.status !== 'Decreed').length}
                     </Text>
-                    <Text style={styles.drawerStatLabel}>Pending</Text>
+                    <Text style={[styles.drawerStatLabel, isDarkMode && { color: '#94a3b8' }]}>Pending</Text>
                   </View>
-                  <View style={styles.drawerStatBox}>
-                    <Text style={styles.drawerStatNumber}>
+                  <View style={[styles.drawerStatBox, isDarkMode && { backgroundColor: '#1a233a' }]}>
+                    <Text style={[styles.drawerStatNumber, isDarkMode && { color: '#f8fafc' }]}>
                       {cases.filter((c) => c.status === 'Disposed' || c.status === 'Decreed').length}
                     </Text>
-                    <Text style={styles.drawerStatLabel}>Disposed</Text>
+                    <Text style={[styles.drawerStatLabel, isDarkMode && { color: '#94a3b8' }]}>Disposed</Text>
                   </View>
                 </View>
               </View>
@@ -2321,7 +2581,7 @@ function AdvocateDiaryApp() {
               {/* Lock Application & Session Controls */}
               <View style={styles.drawerLockRow}>
                 <TouchableOpacity
-                  style={styles.drawerLockBtn}
+                  style={[styles.drawerLockBtn, isDarkMode && { backgroundColor: '#1a233a', borderColor: '#232f48' }]}
                   onPress={() => {
                     Alert.alert('Chamber Locked', 'Practice diary locked. Tap anywhere to reopen.');
                     setDrawerOpen(false);
@@ -2329,9 +2589,9 @@ function AdvocateDiaryApp() {
                   activeOpacity={0.7}
                 >
                   <Text style={styles.drawerLockIcon}>🔒</Text>
-                  <Text style={styles.drawerLockText}>Lock Diary</Text>
+                  <Text style={[styles.drawerLockText, isDarkMode && { color: '#f8fafc' }]}>Lock Diary</Text>
                 </TouchableOpacity>
-                <Text style={styles.drawerVersionText}>v2.0.0 (Release Build)</Text>
+                <Text style={[styles.drawerVersionText, isDarkMode && { color: '#64748b' }]}>v3.0.0 (Release Build)</Text>
               </View>
             </View>
           </View>
@@ -2351,16 +2611,19 @@ function AdvocateDiaryApp() {
 
       {/* --- 1. MODAL: REGISTER NEW CASE --- */}
       <Modal visible={newCaseModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: 20 + bottomInset }]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalContent, { paddingBottom: 20 + bottomInset }, isDarkMode && { backgroundColor: theme.surface }]}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>New Court Case Entry</Text>
+              <Text style={[styles.modalTitle, isDarkMode && { color: theme.text }]}>New Court Case Entry</Text>
               <TouchableOpacity onPress={() => setNewCaseModalVisible(false)}>
                 <Text style={{ fontSize: 18, color: '#94a3b8', fontWeight: 'bold' }}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420 }}>
+            <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
               <Text style={styles.formLabel}>Party Name *</Text>
               <TextInput
                 style={styles.formInput}
@@ -2379,10 +2642,11 @@ function AdvocateDiaryApp() {
                 onChangeText={setCaseNo}
               />
 
-              <Text style={styles.formLabel}>Hearing Date (YYYY-MM-DD) *</Text>
+              <Text style={styles.formLabel}>Hearing Date (DD/MM/YYYY) *</Text>
               <TextInput
                 style={styles.formInput}
-                placeholder="2026-11-09"
+                placeholder="DD/MM/YYYY (e.g. 21/11/2026)"
+                placeholderTextColor="#94a3b8"
                 value={initialHearingDate}
                 onChangeText={setInitialHearingDate}
               />
@@ -2432,32 +2696,35 @@ function AdvocateDiaryApp() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- 2. MODAL: QUICK UPDATE HEARING / CASE DETAIL (STITCH DESIGN) --- */}
       <Modal visible={updateHearingModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.sheetOverlay}>
-          <View style={styles.stitchBottomSheet}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.sheetOverlay}
+        >
+          <View style={[styles.stitchBottomSheet, isDarkMode && { backgroundColor: theme.surface }]}>
             {/* Drag Handle Area */}
             <View style={styles.sheetDragHandleWrap}>
-              <View style={styles.sheetDragHandle} />
+              <View style={[styles.sheetDragHandle, isDarkMode && { backgroundColor: '#334155' }]} />
             </View>
 
             {/* Header Section */}
             <View style={styles.stitchSheetHeader}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.stitchSheetTitle}>Update Hearing</Text>
-                <Text style={styles.stitchSheetSubtitle} numberOfLines={1}>
+                <Text style={[styles.stitchSheetTitle, isDarkMode && { color: theme.text }]}>Update Hearing</Text>
+                <Text style={[styles.stitchSheetSubtitle, isDarkMode && { color: theme.subtext }]} numberOfLines={1}>
                   {activeCase ? `${activeCase.partyName} • ${activeCase.caseNo}` : 'Case Details'}
                 </Text>
               </View>
               <TouchableOpacity
                 onPress={() => setUpdateHearingModalVisible(false)}
-                style={styles.stitchSheetCloseBtn}
+                style={[styles.stitchSheetCloseBtn, isDarkMode && { backgroundColor: theme.subCardBg }]}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Text style={styles.stitchSheetCloseIcon}>✕</Text>
+                <Text style={[styles.stitchSheetCloseIcon, isDarkMode && { color: theme.text }]}>✕</Text>
               </TouchableOpacity>
             </View>
 
@@ -2466,6 +2733,7 @@ function AdvocateDiaryApp() {
               style={styles.stitchSheetScroll}
               contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 16 }}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             >
               {/* 2. Context Strip */}
               <View style={styles.stitchContextStrip}>
@@ -2475,17 +2743,15 @@ function AdvocateDiaryApp() {
                 </Text>
               </View>
 
-              {/* 3. Today's Hearing Order (Mandatory Main Field) */}
+              {/* 3. Today's Hearing Order (Main Field) */}
               <View style={{ marginTop: 16 }}>
-                <Text style={styles.stitchFieldLabel}>
-                  Today's Order / Notes <Text style={{ color: '#ba1a1a' }}>*</Text>
-                </Text>
+                <Text style={styles.stitchFieldLabel}>Today's Order / Notes</Text>
 
-                <View style={styles.stitchTextAreaWrap}>
+                <View style={[styles.stitchTextAreaWrap, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border }]}>
                   <TextInput
-                    style={styles.stitchTextArea}
-                    placeholder="Enter order or hearing summary..."
-                    placeholderTextColor="#76777d"
+                    style={[styles.stitchTextArea, isDarkMode && { color: theme.text }]}
+                    placeholder=""
+                    placeholderTextColor="transparent"
                     multiline
                     value={todayOrderNotes}
                     onChangeText={setTodayOrderNotes}
@@ -2565,7 +2831,7 @@ function AdvocateDiaryApp() {
                 </View>
               </View>
 
-              {/* 5. Next Hearing Date & Time (Streamlined) */}
+              {/* 5. Next Hearing Date (Streamlined) */}
               {!isDecreed ? (
                 <View style={{ marginTop: 16 }}>
                   <Text style={styles.stitchFieldLabel}>
@@ -2578,7 +2844,7 @@ function AdvocateDiaryApp() {
                       style={styles.stitchDateBox}
                       onPress={() => {
                         setPickerMonth(
-                          nextHearingDate ? new Date(nextHearingDate) : new Date(2026, 10, 9)
+                          nextHearingDate ? new Date(nextHearingDate) : new Date()
                         );
                         setPickerVisible(true);
                       }}
@@ -2591,16 +2857,6 @@ function AdvocateDiaryApp() {
                         </Text>
                       </View>
                       <Text style={styles.stitchChevronDown}>▼</Text>
-                    </TouchableOpacity>
-
-                    {/* Compact Time Pill */}
-                    <TouchableOpacity
-                      style={styles.stitchTimePill}
-                      onPress={cycleTime}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={{ fontSize: 13 }}>🕒</Text>
-                      <Text style={styles.stitchTimePillText}>{nextHearingTime}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -2645,7 +2901,7 @@ function AdvocateDiaryApp() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- 3. MODAL: CALENDAR DATE PICKER --- */}
@@ -2764,7 +3020,7 @@ function AdvocateDiaryApp() {
                 {(selectedDocCase?.hearings || []).map((h, i) => (
                   <View key={i} style={styles.docOrderRow}>
                     <Text style={styles.docOrderDate}>
-                      {h.date} ({h.time}):
+                      {formatDateDMY(h.date)}:
                     </Text>
                     <Text style={styles.docOrderText}>{h.orderNotes}</Text>
                   </View>
@@ -2774,17 +3030,222 @@ function AdvocateDiaryApp() {
 
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
+                style={[styles.modalActionBtn, { backgroundColor: isDarkMode ? '#1e293b' : '#f1f5f9' }]}
+                onPress={() => setDocModalVisible(false)}
+              >
+                <Text style={{ color: isDarkMode ? '#94a3b8' : '#475569', fontWeight: '700' }}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[styles.modalActionBtn, { backgroundColor: '#2563eb' }]}
                 onPress={() => {
-                  alert('Document saved to device PDF cache.');
+                  const targetCase = selectedDocCase;
                   setDocModalVisible(false);
+                  openEditCaseModal(targetCase);
                 }}
               >
-                <Text style={{ color: '#ffffff', fontWeight: '700' }}>Save Copy / Close</Text>
+                <Text style={{ color: '#ffffff', fontWeight: '700' }}>✎ Edit Case Details</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* --- 5. MODAL: EDIT ALL CASE DETAILS --- */}
+      <Modal visible={editCaseModalVisible} animationType="slide" transparent={true}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalContent, { maxHeight: 600 + bottomInset, paddingBottom: 20 + bottomInset }, isDarkMode && { backgroundColor: theme.surface }]}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={[styles.modalTitle, isDarkMode && { color: theme.text }]}>Edit Case Details</Text>
+                <Text style={[styles.modalSubtitle, isDarkMode && { color: theme.subtext }]} numberOfLines={1}>
+                  {editingCase?.caseNo || 'Case File'} • {editingCase?.partyName || 'All Details Editable'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setEditCaseModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Text style={{ fontSize: 18, color: '#94a3b8', fontWeight: 'bold' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ paddingVertical: 6 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Party Name (Cause Title) *</Text>
+              <TextInput
+                style={[styles.formInput, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                placeholder="e.g. Ramesh Chandra Jena vs State of Odisha"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                value={editPartyName}
+                onChangeText={setEditPartyName}
+              />
+
+              <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Case Number *</Text>
+              <TextInput
+                style={[styles.formInput, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                placeholder="e.g. WP(C) 1024/2026"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                value={editCaseNo}
+                onChangeText={setEditCaseNo}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1.4 }}>
+                  <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Court / Bench</Text>
+                  <TextInput
+                    style={[styles.formInput, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                    placeholder="e.g. Court 3, High Court"
+                    placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                    value={editCourtName}
+                    onChangeText={setEditCourtName}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Item / List No.</Text>
+                  <TextInput
+                    style={[styles.formInput, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                    placeholder="e.g. 14"
+                    placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                    value={editItemNo}
+                    onChangeText={setEditItemNo}
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Case Category / Nature</Text>
+              <TextInput
+                style={[styles.formInput, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                placeholder="e.g. Writ Petition / Civil Appeal / Caveat"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                value={editCaseType}
+                onChangeText={setEditCaseType}
+              />
+
+              {/* Status Selector */}
+              <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Case Status</Text>
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+                {[
+                  { key: 'PENDING', label: 'Pending' },
+                  { key: 'DECREED', label: 'Decreed' },
+                  { key: 'URGENT', label: 'Urgent' },
+                  { key: 'Disposed', label: 'Disposed' },
+                ].map((st) => {
+                  const isActive = editStatus === st.key;
+                  return (
+                    <TouchableOpacity
+                      key={st.key}
+                      onPress={() => setEditStatus(st.key)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 7,
+                        borderRadius: 8,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: 1,
+                        borderColor: isActive ? '#2563eb' : (isDarkMode ? theme.border : '#cbd5e1'),
+                        backgroundColor: isActive
+                          ? (isDarkMode ? '#1e3a8a' : '#eff6ff')
+                          : (isDarkMode ? theme.subCardBg : '#ffffff'),
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11.5,
+                          fontWeight: isActive ? '700' : '500',
+                          color: isActive ? '#2563eb' : (isDarkMode ? theme.text : '#475569'),
+                        }}
+                      >
+                        {st.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Status / Relief Badge</Text>
+              <TextInput
+                style={[styles.formInput, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                placeholder="e.g. Decreed in Favor, Interim Stay, Notice Issued"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                value={editStatusBadge}
+                onChangeText={setEditStatusBadge}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Client Name</Text>
+                  <TextInput
+                    style={[styles.formInput, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                    placeholder="e.g. Ramesh Chandra Jena"
+                    placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                    value={editClientName}
+                    onChangeText={setEditClientName}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Client Phone</Text>
+                  <TextInput
+                    style={[styles.formInput, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                    placeholder="e.g. 9861011223"
+                    placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                    keyboardType="phone-pad"
+                    value={editPhoneNo}
+                    onChangeText={setEditPhoneNo}
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.formLabel, isDarkMode && { color: theme.subtext }]}>Initial Order / Case Brief Note</Text>
+              <TextInput
+                style={[styles.formInput, { minHeight: 64 }, isDarkMode && { backgroundColor: theme.subCardBg, borderColor: theme.border, color: theme.text }]}
+                placeholder="Enter case brief, stage, or instructions..."
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                multiline
+                value={editCaseBrief}
+                onChangeText={setEditCaseBrief}
+              />
+
+              {/* Danger Zone: Delete Case File */}
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 10,
+                  marginTop: 6,
+                  marginBottom: 10,
+                  borderRadius: 8,
+                  backgroundColor: isDarkMode ? '#2d1515' : '#fef2f2',
+                  borderWidth: 1,
+                  borderColor: isDarkMode ? '#5c1d1d' : '#fecaca',
+                  gap: 6,
+                }}
+                onPress={confirmDeleteFromEdit}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 13, color: '#ef4444' }}>🗑</Text>
+                <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#ef4444' }}>
+                  Delete Case File Permanently
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={[styles.modalActionBtn, { backgroundColor: isDarkMode ? '#1e293b' : '#f1f5f9' }]}
+                onPress={() => setEditCaseModalVisible(false)}
+              >
+                <Text style={{ color: isDarkMode ? '#94a3b8' : '#475569', fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalActionBtn, { backgroundColor: '#2563eb' }]}
+                onPress={handleSaveCaseDetails}
+              >
+                <Text style={{ color: '#ffffff', fontWeight: '700' }}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- FIRST-TIME USER ONBOARDING WELCOME MODAL --- */}
@@ -2796,88 +3257,96 @@ function AdvocateDiaryApp() {
       >
         <View style={[styles.onboardingSafeArea, { paddingTop: topInset, paddingBottom: bottomInset + 14 }]}>
           <StatusBar barStyle="dark-content" backgroundColor="#f7f9fb" />
-          <ScrollView
-            contentContainerStyle={styles.onboardingScroll}
-            keyboardShouldPersistTaps="handled"
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
           >
-            <View style={styles.onboardingCard}>
-              {/* Advocate Bands Icon */}
-              <View style={styles.onboardingIconBox}>
-                <View style={styles.advocateBandsContainer}>
-                  <View style={styles.advocateBandsCollar} />
-                  <View style={styles.advocateBandsPair}>
-                    <View style={styles.advocateBand} />
-                    <View style={styles.advocateBand} />
+            <ScrollView
+              contentContainerStyle={styles.onboardingScroll}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.onboardingCard}>
+                {/* Advocate Bands Icon */}
+                <View style={styles.onboardingIconBox}>
+                  <View style={styles.advocateBandsContainer}>
+                    <View style={styles.advocateBandsCollar} />
+                    <View style={styles.advocateBandsPair}>
+                      <View style={styles.advocateBand} />
+                      <View style={styles.advocateBand} />
+                    </View>
                   </View>
                 </View>
-              </View>
 
-              {/* Title & Tagline */}
-              <Text style={styles.onboardingTitle}>Welcome to ado-desk</Text>
-              <Text style={styles.onboardingTagline}>
-                Your personal, offline court diary & hearing ledger.
-              </Text>
+                {/* Title & Tagline */}
+                <Text style={styles.onboardingTitle}>Welcome to ado-desk</Text>
+                <Text style={styles.onboardingTagline}>
+                  Your personal, offline court diary & hearing ledger.
+                </Text>
 
-              {/* Offline & Confidentiality Assurance Badges */}
-              <View style={styles.onboardingBadgesList}>
-                <View style={styles.onboardingBadgeItem}>
-                  <Text style={styles.onboardingBadgeIcon}>🔒</Text>
-                  <Text style={styles.onboardingBadgeText}>
-                    100% Offline & Stored on Device
-                  </Text>
+                {/* Offline & Confidentiality Assurance Badges */}
+                <View style={styles.onboardingBadgesList}>
+                  <View style={styles.onboardingBadgeItem}>
+                    <Text style={styles.onboardingBadgeIcon}>🔒</Text>
+                    <Text style={styles.onboardingBadgeText}>
+                      100% Offline & Stored on Device
+                    </Text>
+                  </View>
+                  <View style={styles.onboardingBadgeItem}>
+                    <Text style={styles.onboardingBadgeIcon}>⚖️</Text>
+                    <Text style={styles.onboardingBadgeText}>
+                      Private practice diary & hearing history
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.onboardingBadgeItem}>
-                  <Text style={styles.onboardingBadgeIcon}>⚖️</Text>
-                  <Text style={styles.onboardingBadgeText}>
-                    Private practice diary & hearing history
-                  </Text>
+
+                {/* Name Prompt Input */}
+                <View style={styles.onboardingFormWrap}>
+                  <Text style={styles.onboardingInputLabel}>ADVOCATE NAME / TITLE</Text>
+                  <TextInput
+                    style={styles.onboardingInput}
+                    placeholder="Enter your full name or title, e.g., Advocate Sounic"
+                    placeholderTextColor="#94a3b8"
+                    value={onboardingName}
+                    onChangeText={setOnboardingName}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={handleCompleteOnboarding}
+                  />
                 </View>
-              </View>
 
-              {/* Name Prompt Input */}
-              <View style={styles.onboardingFormWrap}>
-                <Text style={styles.onboardingInputLabel}>ADVOCATE NAME / TITLE</Text>
-                <TextInput
-                  style={styles.onboardingInput}
-                  placeholder="Enter your full name or title, e.g., Advocate Sounic"
-                  placeholderTextColor="#94a3b8"
-                  value={onboardingName}
-                  onChangeText={setOnboardingName}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  returnKeyType="done"
-                  onSubmitEditing={handleCompleteOnboarding}
-                />
+                {/* Action Button */}
+                <TouchableOpacity
+                  style={styles.onboardingSubmitBtn}
+                  onPress={handleCompleteOnboarding}
+                  activeOpacity={0.88}
+                >
+                  <Text style={styles.onboardingSubmitBtnText}>Get Started →</Text>
+                </TouchableOpacity>
               </View>
-
-              {/* Action Button */}
-              <TouchableOpacity
-                style={styles.onboardingSubmitBtn}
-                onPress={handleCompleteOnboarding}
-                activeOpacity={0.88}
-              >
-                <Text style={styles.onboardingSubmitBtnText}>Get Started →</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
       {/* --- MODAL: EDIT ADVOCATE PROFILE --- */}
       <Modal visible={editProfileModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: 580 + bottomInset, paddingBottom: 20 + bottomInset }]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalContent, { maxHeight: 580 + bottomInset, paddingBottom: 20 + bottomInset }, isDarkMode && { backgroundColor: theme.surface }]}>
             <View style={styles.modalHeaderRow}>
               <View>
-                <Text style={styles.modalTitle}>Edit Advocate Profile</Text>
-                <Text style={styles.modalSubtitle}>Update personal practice & chamber details</Text>
+                <Text style={[styles.modalTitle, isDarkMode && { color: theme.text }]}>Edit Advocate Profile</Text>
+                <Text style={[styles.modalSubtitle, isDarkMode && { color: theme.subtext }]}>Update personal practice & chamber details</Text>
               </View>
               <TouchableOpacity onPress={() => setEditProfileModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Text style={{ fontSize: 18, color: '#94a3b8', fontWeight: 'bold' }}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ paddingVertical: 6 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ paddingVertical: 6 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={styles.formLabel}>Full Name / Title *</Text>
               <TextInput
                 style={styles.formInput}
@@ -2973,53 +3442,53 @@ function AdvocateDiaryApp() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- MODAL: ABOUT APP --- */}
       <Modal visible={aboutModalVisible} animationType="fade" transparent={true}>
         <View style={[styles.modalOverlay, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
-          <View style={[styles.modalContent, { maxWidth: 390, width: '100%', borderRadius: 20, padding: 22 }]}>
+          <View style={[styles.modalContent, { maxWidth: 390, width: '100%', borderRadius: 20, padding: 22 }, isDarkMode && { backgroundColor: theme.surface }]}>
             {/* Header / Brand Icon */}
             <View style={{ alignItems: 'center', marginBottom: 14 }}>
               <View style={styles.aboutAppIconCircle}>
                 <Text style={{ fontSize: 26, color: '#ffffff' }}>⚖</Text>
               </View>
-              <Text style={styles.aboutAppName}>ado-desk</Text>
-              <Text style={styles.aboutAppSubtitle}>Personal Practice Ledger & Court Diary</Text>
+              <Text style={[styles.aboutAppName, isDarkMode && { color: theme.text }]}>ado-desk</Text>
+              <Text style={[styles.aboutAppSubtitle, isDarkMode && { color: theme.subtext }]}>Personal Practice Ledger & Court Diary</Text>
               <View style={styles.aboutVersionBadge}>
-                <Text style={styles.aboutVersionBadgeText}>v2.0.0 (Release Build)</Text>
+                <Text style={styles.aboutVersionBadgeText}>v3.0.0 (Release Build)</Text>
               </View>
             </View>
 
             <View style={styles.aboutDetailsList}>
-              <View style={styles.aboutDetailItem}>
-                <Text style={styles.aboutDetailLabel}>DEVELOPER</Text>
-                <Text style={styles.aboutDetailValue}>Sounic Behera</Text>
+              <View style={[styles.aboutDetailItem, isDarkMode && { borderBottomColor: theme.border }]}>
+                <Text style={[styles.aboutDetailLabel, isDarkMode && { color: theme.muted }]}>DEVELOPER</Text>
+                <Text style={[styles.aboutDetailValue, isDarkMode && { color: theme.text }]}>Sounic Behera</Text>
               </View>
 
-              <View style={styles.aboutDetailItem}>
-                <Text style={styles.aboutDetailLabel}>APPLICATION</Text>
-                <Text style={styles.aboutDetailValue}>ado-desk Practice Suite</Text>
+              <View style={[styles.aboutDetailItem, isDarkMode && { borderBottomColor: theme.border }]}>
+                <Text style={[styles.aboutDetailLabel, isDarkMode && { color: theme.muted }]}>APPLICATION</Text>
+                <Text style={[styles.aboutDetailValue, isDarkMode && { color: theme.text }]}>ado-desk Practice Suite</Text>
               </View>
 
-              <View style={styles.aboutDetailItem}>
-                <Text style={styles.aboutDetailLabel}>VERSION</Text>
-                <Text style={styles.aboutDetailValue}>v2.0.0 (Production Release)</Text>
+              <View style={[styles.aboutDetailItem, isDarkMode && { borderBottomColor: theme.border }]}>
+                <Text style={[styles.aboutDetailLabel, isDarkMode && { color: theme.muted }]}>VERSION</Text>
+                <Text style={[styles.aboutDetailValue, isDarkMode && { color: theme.text }]}>v3.0.0 (Production Release)</Text>
               </View>
 
-              <View style={styles.aboutDetailItem}>
-                <Text style={styles.aboutDetailLabel}>STORAGE ENGINE</Text>
-                <Text style={styles.aboutDetailValue}>Offline-First On-Device Vault</Text>
+              <View style={[styles.aboutDetailItem, isDarkMode && { borderBottomColor: theme.border }]}>
+                <Text style={[styles.aboutDetailLabel, isDarkMode && { color: theme.muted }]}>STORAGE ENGINE</Text>
+                <Text style={[styles.aboutDetailValue, isDarkMode && { color: theme.text }]}>Offline-First On-Device Vault</Text>
               </View>
 
-              <View style={styles.aboutDetailItem}>
-                <Text style={styles.aboutDetailLabel}>SECURITY ARCHITECTURE</Text>
-                <Text style={styles.aboutDetailValue}>100% Private • Zero Cloud Leakage</Text>
+              <View style={[styles.aboutDetailItem, isDarkMode && { borderBottomColor: theme.border }]}>
+                <Text style={[styles.aboutDetailLabel, isDarkMode && { color: theme.muted }]}>SECURITY ARCHITECTURE</Text>
+                <Text style={[styles.aboutDetailValue, isDarkMode && { color: theme.text }]}>100% Private • Zero Cloud Leakage</Text>
               </View>
             </View>
 
-            <Text style={styles.aboutAppDescription}>
+            <Text style={[styles.aboutAppDescription, isDarkMode && { color: theme.subtext }]}>
               Designed and engineered by Sounic Behera for advocates and legal practitioners. All dockets, cause lists, daily orders, and client ledgers are preserved strictly within your local device memory.
             </Text>
 
@@ -4772,6 +5241,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#191c1e',
   },
+  drawerThemeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    marginBottom: 9,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  drawerThemeCardTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  drawerThemeCardSubtitle: {
+    fontSize: 11.5,
+    color: '#64748b',
+    marginTop: 1,
+  },
   drawerBiometricCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -4787,10 +5277,10 @@ const styles = StyleSheet.create({
     color: '#191c1e',
   },
   drawerTogglePill: {
-    width: 38,
-    height: 22,
-    borderRadius: 11,
-    padding: 2,
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    padding: 3,
     justifyContent: 'center',
   },
   drawerTogglePillActive: {
@@ -4798,19 +5288,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   drawerTogglePillInactive: {
-    backgroundColor: '#c6c6cd',
+    backgroundColor: '#cbd5e1',
     alignItems: 'flex-start',
   },
   drawerToggleThumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#ffffff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 2,
-    elevation: 2,
+    elevation: 3,
   },
   drawerToggleThumbActive: {},
   drawerToggleThumbInactive: {},
